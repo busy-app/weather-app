@@ -1,0 +1,101 @@
+// The forecast screen: the day ahead, one hour at a time.
+//
+//   ┌────────────────────────┐
+//   │ ☀ +23°          12:00  │
+//   │ ▁▂▃▄▅▆▇█▇▆▅▄▃▂▁▂▃▄▅▆▇  │
+//   └────────────────────────┘
+//
+// Everything on it describes the hour the marker stands on, not the present one.
+
+import { column, row, stack, type Node } from "@shared/layout";
+import { BAR_W, GRAPH_H, GRAPH_W, markerBox, renderGraph, renderMarker } from "../graph.ts";
+import { formatTemp } from "../temp.ts";
+import { iconFor } from "../wmo.ts";
+
+const ICON = { width: 7, height: 7 };
+
+/** Space between the icon and the temperature. */
+const GAP = 2;
+
+const WHITE = "#FFFFFFFF";
+/** The clock is dimmed: it labels the hour rather than telling the time. */
+const DIM = "#AAAAAAFF";
+
+/** An hour of the forecast, as the screen describes it. */
+export type ForecastHour = {
+  /** Hour of the day, 0..23. */
+  hour: number;
+  temp: number;
+  /** WMO code, for the icon. */
+  code: number;
+};
+
+/** "12:00" for the hour the marker sits on. */
+function formatHour(hour: number): string {
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
+/**
+ * The frame.
+ *
+ * @param hours every hour the graph draws
+ * @param at index into `hours` of the one the marker sits on
+ */
+export function forecastScreen(hours: ForecastHour[], at: number): Node {
+  const current = hours[at];
+  const temps = hours.map((h) => h.temp);
+  const box = markerBox(temps, at);
+
+  // Apart, so a step redraws the marker and leaves the graph alone.
+  const graph: Node[] = [
+    {
+      type: "xpmbitmap",
+      id: "graph",
+      data: renderGraph(temps),
+      opacity: 100,
+      width: GRAPH_W,
+      height: GRAPH_H,
+    },
+    {
+      type: "xpmbitmap",
+      id: "marker",
+      data: renderMarker(box.height),
+      opacity: 100,
+      width: BAR_W,
+      height: box.height,
+      // Graph coordinates: the stack pins both to its top-left.
+      dx: box.x,
+      dy: box.y,
+      z_index: 60,
+    },
+  ];
+
+  return column({ justify: "between" }, [
+    row({ justify: "between", align: "center", width: GRAPH_W }, [
+      row({ align: "center", gap: GAP }, [
+        {
+          type: "image",
+          id: "condition-icon",
+          path: `images/${iconFor(current.code)}`,
+          opacity: 100,
+          ...ICON,
+        },
+        {
+          type: "text",
+          id: "temp",
+          text: formatTemp(current.temp, "°"),
+          font: "small",
+          color: WHITE,
+        },
+      ]),
+      {
+        type: "text",
+        id: "hour",
+        text: formatHour(current.hour),
+        font: "small",
+        color: DIM,
+      },
+    ]),
+    stack({ width: GRAPH_W, height: GRAPH_H }, graph),
+  ]);
+}
