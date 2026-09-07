@@ -26,6 +26,10 @@ const NIGHT_COLOR = "#4A90D9FF";
 const PANEL_W = 48;
 const PANEL_COLOR = "#0A1A4AFF";
 
+/** Redrawing one element alone leaves the panel on top of it unless the order is spelled out. */
+const PANEL_Z = 10;
+const CONTENT_Z = 50;
+
 /** Rows of the date list; the neighbours fall off the edges. */
 const DATE_STEP = 7;
 const DATE_MIDDLE = 5;
@@ -82,7 +86,15 @@ function half(
 ): Node {
   return row({ align: "center", gap: GAP }, [
     row({ width: LABEL_W }, [
-      { type: "text", id: `${name}-label`, text: label, font: "small", color, dy },
+      {
+        type: "text",
+        id: `${name}-label`,
+        text: label,
+        font: "small",
+        color,
+        dy,
+        z_index: CONTENT_Z,
+      },
     ]),
     {
       type: "image",
@@ -90,6 +102,7 @@ function half(
       path: `images/${iconFor(code, daylight)}`,
       opacity: 100,
       dy,
+      z_index: CONTENT_Z,
       ...ICON,
     },
     {
@@ -99,6 +112,7 @@ function half(
       font: "small",
       color: WHITE,
       dy,
+      z_index: CONTENT_Z,
     },
   ]);
 }
@@ -122,6 +136,7 @@ export function daysScreen(days: DayForecast[], at: number): Node {
       fill: "solid",
       fill_colors: [PANEL_COLOR],
       border_width: 0,
+      z_index: PANEL_Z,
     },
     row({ height: SCREEN.height }, [
       column({ justify: "between", width: PANEL_W, height: SCREEN.height }, [
@@ -143,6 +158,7 @@ export function daysScreen(days: DayForecast[], at: number): Node {
             font: "small",
             color: DIM,
             dy: DATE_MIDDLE - DATE_STEP,
+            z_index: CONTENT_Z,
           },
           {
             type: "text",
@@ -151,6 +167,7 @@ export function daysScreen(days: DayForecast[], at: number): Node {
             font: "small",
             color: WHITE,
             dy: DATE_MIDDLE,
+            z_index: CONTENT_Z,
           },
           {
             type: "text",
@@ -159,6 +176,7 @@ export function daysScreen(days: DayForecast[], at: number): Node {
             font: "small",
             color: DIM,
             dy: DATE_STEP + DATE_MIDDLE,
+            z_index: CONTENT_Z,
           },
         ],
       ),
@@ -169,6 +187,7 @@ export function daysScreen(days: DayForecast[], at: number): Node {
         opacity: 100,
         width: BAR_W,
         height: SCREEN.height,
+        z_index: CONTENT_Z,
       },
     ]),
   ]);
