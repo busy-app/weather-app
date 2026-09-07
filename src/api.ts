@@ -18,6 +18,8 @@ export type CurrentWeather = {
   temp: number;
   /** WMO weather code. */
   code: number;
+  /** Whether the sun is up; some conditions are drawn differently at night. */
+  daylight: boolean;
 };
 
 /** A day of the multi-day forecast, as the app shows it. */
@@ -37,16 +39,14 @@ type OpenMeteoResponse = {
   current?: {
     temperature_2m?: number;
     weather_code?: number;
+    /** 1 by day, 0 by night. */
+    is_day?: number;
   };
   hourly?: {
     time?: string[];
     temperature_2m?: number[];
     weather_code?: number[];
-  };
-  daily?: {
-    time?: string[];
-    sunrise?: string[];
-    sunset?: string[];
+    is_day?: number[];
   };
 };
 
@@ -59,7 +59,7 @@ export async function fetchCurrent(city: City): Promise<CurrentWeather> {
     "https://api.open-meteo.com/v1/forecast" +
     `?latitude=${city.lat}` +
     `&longitude=${city.lon}` +
-    "&current=temperature_2m,weather_code" +
+    "&current=temperature_2m,weather_code,is_day" +
     `&timezone=${encodeURIComponent(city.tzName)}`;
 
   const res = await fetch(url);
@@ -74,16 +74,26 @@ export async function fetchCurrent(city: City): Promise<CurrentWeather> {
     throw new Error("open-meteo: no current in response");
   }
 
-  return { temp, code };
+  return { temp, code, daylight: data.current?.is_day !== 0 };
 }
 
-/** Hourly temperatures in °C, GRAPH_HOURS ahead of the current hour. */
-export async function fetchHourly(city: City): Promise<number[]> {
+/** An hour of the forecast, as the API reports it. */
+export type ForecastHour = {
+  /** Local hour of the day, 0..23. */
+  hour: number;
+  /** Temperature, °C. */
+  temp: number;
+  code: number;
+  daylight: boolean;
+};
+
+/** The forecast GRAPH_HOURS ahead of the current hour. */
+export async function fetchHourly(city: City): Promise<ForecastHour[]> {
   const url =
     "https://api.open-meteo.com/v1/forecast" +
     `?latitude=${city.lat}` +
     `&longitude=${city.lon}` +
-    "&hourly=temperature_2m" +
+    "&hourly=temperature_2m,weather_code,is_day" +
     "&forecast_days=2" +
     `&timezone=${encodeURIComponent(city.tzName)}`;
 
@@ -95,7 +105,9 @@ export async function fetchHourly(city: City): Promise<number[]> {
   const data = (await res.json()) as OpenMeteoResponse;
   const times = data.hourly?.time;
   const temps = data.hourly?.temperature_2m;
-  if (!times || !temps || times.length === 0) {
+  const codes = data.hourly?.weather_code;
+  const isDay = data.hourly?.is_day;
+  if (!times || !temps || !codes || !isDay || times.length === 0) {
     throw new Error("open-meteo: no hourly in response");
   }
 
@@ -104,7 +116,12 @@ export async function fetchHourly(city: City): Promise<number[]> {
   let start = times.findIndex((t) => new Date(t).getTime() >= nowMs);
   if (start < 0) start = 0;
 
-  return temps.slice(start, start + GRAPH_HOURS);
+  return times.slice(start, start + GRAPH_HOURS).map((at, i) => ({
+    hour: Number(at.slice(11, 13)),
+    temp: temps[start + i],
+    code: codes[start + i],
+    daylight: isDay[start + i] !== 0,
+  }));
 }
 
 /** Days the multi-day forecast covers, today first. */
@@ -127,14 +144,13 @@ function commonest(codes: number[]): number {
   return best;
 }
 
-/** The next FORECAST_DAYS days, each split at sunrise and sunset. */
+/** The next FORECAST_DAYS days, each split into its daylight and night hours. */
 export async function fetchDays(city: City): Promise<DayForecast[]> {
   const url =
     "https://api.open-meteo.com/v1/forecast" +
     `?latitude=${city.lat}` +
     `&longitude=${city.lon}` +
-    "&hourly=temperature_2m,weather_code" +
-    "&daily=sunrise,sunset" +
+    "&hourly=temperature_2m,weather_code,is_day" +
     `&forecast_days=${FORECAST_DAYS}` +
     `&timezone=${encodeURIComponent(city.tzName)}`;
 
@@ -147,43 +163,40 @@ export async function fetchDays(city: City): Promise<DayForecast[]> {
   const times = data.hourly?.time;
   const temps = data.hourly?.temperature_2m;
   const codes = data.hourly?.weather_code;
-  const dates = data.daily?.time;
-  const sunrises = data.daily?.sunrise;
-  const sunsets = data.daily?.sunset;
-  if (!times || !temps || !codes || !dates || !sunrises || !sunsets) {
-    throw new Error("open-meteo: no daily in response");
+  const isDay = data.hourly?.is_day;
+  if (!times || !temps || !codes || !isDay) {
+    throw new Error("open-meteo: no hourly in response");
+  }
+
+  /** Each date's hours, split in two, in the order the API listed them. */
+  const halves = new Map<
+    string,
+    { dayTemps: number[]; dayCodes: number[]; nightTemps: number[]; nightCodes: number[] }
+  >();
+
+  for (let h = 0; h < times.length; h++) {
+    const date = times[h].slice(0, 10);
+    let half = halves.get(date);
+    if (!half) {
+      half = { dayTemps: [], dayCodes: [], nightTemps: [], nightCodes: [] };
+      halves.set(date, half);
+    }
+    const daylight = isDay[h] !== 0;
+    (daylight ? half.dayTemps : half.nightTemps).push(temps[h]);
+    (daylight ? half.dayCodes : half.nightCodes).push(codes[h]);
   }
 
   const days: DayForecast[] = [];
-  for (let i = 0; i < dates.length; i++) {
-    const date = dates[i];
-    const sunrise = sunrises[i];
-    const sunset = sunsets[i];
-    if (!sunrise || !sunset) continue;
-
-    // Local timestamps sort lexically, so they compare as strings.
-    const dayTemps: number[] = [];
-    const dayCodes: number[] = [];
-    const nightTemps: number[] = [];
-    const nightCodes: number[] = [];
-
-    for (let h = 0; h < times.length; h++) {
-      const at = times[h];
-      if (!at.startsWith(date)) continue;
-      const daylight = at >= sunrise && at <= sunset;
-      (daylight ? dayTemps : nightTemps).push(temps[h]);
-      (daylight ? dayCodes : nightCodes).push(codes[h]);
-    }
-
+  for (const [date, half] of halves) {
     // A partial first day can leave one half without hours.
-    if (dayTemps.length === 0 || nightTemps.length === 0) continue;
+    if (half.dayTemps.length === 0 || half.nightTemps.length === 0) continue;
 
     days.push({
       date,
-      day: mean(dayTemps),
-      night: mean(nightTemps),
-      dayCode: commonest(dayCodes),
-      nightCode: commonest(nightCodes),
+      day: mean(half.dayTemps),
+      night: mean(half.nightTemps),
+      dayCode: commonest(half.dayCodes),
+      nightCode: commonest(half.nightCodes),
     });
   }
 

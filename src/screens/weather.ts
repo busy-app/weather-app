@@ -36,7 +36,7 @@ export function weatherScreen(weather: CurrentWeather, now: Date): Node {
     {
       type: "animation",
       id: "condition-anim",
-      path: `animations/${animationFor(weather.code)}`,
+      path: `animations/${animationFor(weather.code, weather.daylight)}`,
       loop: true,
       await_previous_end: false,
       opacity: 100,

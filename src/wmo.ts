@@ -3,47 +3,60 @@
 /** A weather condition, as far as this app draws it. */
 export type Condition =
   | "clear"
+  | "mclear"
   | "pcloudy"
-  | "mcloudy"
   | "cloudy"
-  | "foggy"
-  | "lightrain"
+  | "fog"
+  | "drizzle"
   | "rain"
-  | "oshower"
-  | "ishower"
-  | "snow";
+  | "heavy_rain"
+  | "sun_showers"
+  | "flurries"
+  | "snow"
+  | "heavy_snow"
+  | "blizzard"
+  | "thunderstorms"
+  | "windy";
+
+/** Conditions that look different by day and by night; their assets carry a `_day`/`_night` suffix. */
+const DIURNAL = new Set<Condition>(["clear", "mclear", "pcloudy"]);
 
 /** WMO code → condition. Anything unlisted is drawn as cloudy. */
 const CONDITIONS = new Map<number, Condition>([
   [0, "clear"],
-  [1, "pcloudy"],
-  [2, "mcloudy"],
+  [1, "mclear"],
+  [2, "pcloudy"],
   [3, "cloudy"],
-  [45, "foggy"],
-  [48, "foggy"],
-  [51, "lightrain"],
-  [53, "lightrain"],
-  [56, "lightrain"],
-  [61, "lightrain"],
-  [66, "lightrain"],
-  [55, "rain"],
-  [57, "rain"],
+  [45, "fog"],
+  [48, "fog"],
+  // Drizzle, freezing drizzle.
+  [51, "drizzle"],
+  [53, "drizzle"],
+  [55, "drizzle"],
+  [56, "drizzle"],
+  [57, "drizzle"],
+  // Rain, freezing rain.
+  [61, "rain"],
   [63, "rain"],
-  [65, "rain"],
-  [67, "rain"],
-  [82, "rain"],
-  [71, "snow"],
+  [65, "heavy_rain"],
+  [66, "rain"],
+  [67, "heavy_rain"],
+  // Snowfall, snow grains.
+  [71, "flurries"],
   [73, "snow"],
-  [75, "snow"],
-  [77, "snow"],
+  [75, "heavy_snow"],
+  [77, "flurries"],
+  // Rain showers.
+  [80, "sun_showers"],
+  [81, "rain"],
+  [82, "heavy_rain"],
+  // Snow showers.
   [85, "snow"],
-  [86, "snow"],
-  [80, "oshower"],
-  [81, "ishower"],
-  // Thunderstorms: no dedicated asset, drawn as rain.
-  [95, "rain"],
-  [96, "rain"],
-  [99, "rain"],
+  [86, "blizzard"],
+  // Thunderstorms, with and without hail.
+  [95, "thunderstorms"],
+  [96, "thunderstorms"],
+  [99, "thunderstorms"],
 ]);
 
 /** The condition a code stands for. */
@@ -51,13 +64,18 @@ export function conditionOf(wmo: number): Condition {
   return CONDITIONS.get(wmo) ?? "cloudy";
 }
 
-/** Every condition has an icon of its own. */
-export function iconFor(wmo: number): string {
-  return `ic_${conditionOf(wmo)}.png`;
+/** Base name of the assets for a code, without an extension. */
+function assetFor(wmo: number, daylight: boolean): string {
+  const condition = conditionOf(wmo);
+  return DIURNAL.has(condition) ? `${condition}_${daylight ? "day" : "night"}` : condition;
 }
 
-/** Animations lack a snow loop, so snow plays the rain one. */
-export function animationFor(wmo: number): string {
-  const condition = conditionOf(wmo);
-  return `w_${condition === "snow" ? "rain" : condition}.anim`;
+/** Every condition has an icon of its own. */
+export function iconFor(wmo: number, daylight: boolean): string {
+  return `${assetFor(wmo, daylight)}.png`;
+}
+
+/** Every icon has an animation under the same name. */
+export function animationFor(wmo: number, daylight: boolean): string {
+  return `${assetFor(wmo, daylight)}.anim`;
 }

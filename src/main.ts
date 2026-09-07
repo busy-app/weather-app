@@ -8,10 +8,11 @@ import {
   LONDON,
   type CurrentWeather,
   type DayForecast,
+  type ForecastHour,
 } from "./api.ts";
 import { HOURS } from "./graph.ts";
 import { daysScreen } from "./screens/days.ts";
-import { forecastScreen, type ForecastHour } from "./screens/forecast.ts";
+import { forecastScreen } from "./screens/forecast.ts";
 import { weatherScreen } from "./screens/weather.ts";
 
 /** The name the app draws under; the device clears elements by this id. */
@@ -44,22 +45,19 @@ let phase: Phase = { screen: "weather" };
 
 /** Reads the forecast. Failures leave the last good data on screen. */
 async function refresh(): Promise<void> {
-  const [current, temps, forecast] = await Promise.all([
+  const [current, forecastHours, forecastDays] = await Promise.all([
     fetchCurrent(LONDON),
     fetchHourly(LONDON),
     fetchDays(LONDON),
   ]);
 
   weather = current;
-  days = forecast;
+  days = forecastDays;
 
   // Rounded once here, so bar heights and readings agree.
-  const startHour = new Date().getHours();
-  hours = temps.slice(0, HOURS).map((temp, i) => ({
-    hour: (startHour + i) % 24,
-    temp: Math.round(temp),
-    // Only the present hour's condition is known; the rest reuse it.
-    code: current.code,
+  hours = forecastHours.slice(0, HOURS).map((hour) => ({
+    ...hour,
+    temp: Math.round(hour.temp),
   }));
 }
 

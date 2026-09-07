@@ -8,6 +8,7 @@
 // Everything on it describes the hour the marker stands on, not the present one.
 
 import { column, row, stack, type Node } from "@shared/layout";
+import type { ForecastHour } from "../api.ts";
 import { BAR_W, GRAPH_H, GRAPH_W, markerBox, renderGraph, renderMarker } from "../graph.ts";
 import { formatTemp } from "../temp.ts";
 import { iconFor } from "../wmo.ts";
@@ -20,15 +21,6 @@ const GAP = 2;
 const WHITE = "#FFFFFFFF";
 /** The clock is dimmed: it labels the hour rather than telling the time. */
 const DIM = "#AAAAAAFF";
-
-/** An hour of the forecast, as the screen describes it. */
-export type ForecastHour = {
-  /** Hour of the day, 0..23. */
-  hour: number;
-  temp: number;
-  /** WMO code, for the icon. */
-  code: number;
-};
 
 /** "12:00" for the hour the marker sits on. */
 function formatHour(hour: number): string {
@@ -76,7 +68,7 @@ export function forecastScreen(hours: ForecastHour[], at: number): Node {
         {
           type: "image",
           id: "condition-icon",
-          path: `images/${iconFor(current.code)}`,
+          path: `images/${iconFor(current.code, current.daylight)}`,
           opacity: 100,
           ...ICON,
         },

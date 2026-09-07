@@ -78,6 +78,7 @@ function half(
   code: number,
   temp: number,
   dy: number,
+  daylight: boolean,
 ): Node {
   return row({ align: "center", gap: GAP }, [
     row({ width: LABEL_W }, [
@@ -86,7 +87,7 @@ function half(
     {
       type: "image",
       id: `${name}-icon`,
-      path: `images/${iconFor(code)}`,
+      path: `images/${iconFor(code, daylight)}`,
       opacity: 100,
       dy,
       ...ICON,
@@ -124,8 +125,8 @@ export function daysScreen(days: DayForecast[], at: number): Node {
     },
     row({ height: SCREEN.height }, [
       column({ justify: "between", width: PANEL_W, height: SCREEN.height }, [
-        half("day", "DAY", DAY_COLOR, current.dayCode, current.day, TOP_DY),
-        half("night", "NIGHT", NIGHT_COLOR, current.nightCode, current.night, BOTTOM_DY),
+        half("day", "DAY", DAY_COLOR, current.dayCode, current.day, TOP_DY, true),
+        half("night", "NIGHT", NIGHT_COLOR, current.nightCode, current.night, BOTTOM_DY, false),
       ]),
       stack(
         {
