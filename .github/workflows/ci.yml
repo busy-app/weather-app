@@ -27,3 +27,5 @@ jobs:
       - run: pnpm typecheck
 
       - run: pnpm build
+        env:
+          VITE_WEATHER_API: ${{ vars.WEATHER_API }}
