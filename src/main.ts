@@ -2,10 +2,7 @@ import { device } from "@shared/device";
 import { render } from "@shared/layout";
 import manifest from "./appmeta/manifest.json";
 import {
-  fetchCurrent,
-  fetchDays,
-  fetchHourly,
-  LONDON,
+  fetchForecast,
   type CurrentWeather,
   type DayForecast,
   type ForecastHour,
@@ -45,17 +42,13 @@ let phase: Phase = { screen: "weather" };
 
 /** Reads the forecast. Failures leave the last good data on screen. */
 async function refresh(): Promise<void> {
-  const [current, forecastHours, forecastDays] = await Promise.all([
-    fetchCurrent(LONDON),
-    fetchHourly(LONDON),
-    fetchDays(LONDON),
-  ]);
+  const forecast = await fetchForecast();
 
-  weather = current;
-  days = forecastDays;
+  weather = forecast.current;
+  days = forecast.days;
 
   // Rounded once here, so bar heights and readings agree.
-  hours = forecastHours.slice(0, HOURS).map((hour) => ({
+  hours = forecast.hours.slice(0, HOURS).map((hour) => ({
     ...hour,
     temp: Math.round(hour.temp),
   }));
