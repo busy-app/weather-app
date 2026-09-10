@@ -14,8 +14,8 @@
 // Usage:
 //   pnpm build                     → dist/<id>/
 //   pnpm build --out <path>        → <path>/<id>/, relative to the repository root
-//   pnpm build --tgz               → the folder, plus <id>.tgz beside it
-//   pnpm build --tgz-only          → <id>.tgz alone
+//   pnpm build --tgz               → the folder, plus <id>-<version>.tgz beside it
+//   pnpm build --tgz-only          → <id>-<version>.tgz alone
 //   pnpm build --no-minify         → readable output, for debugging
 //   pnpm build --bundle            → everything inlined into one main.js
 
@@ -163,7 +163,7 @@ console.log(`  scripts: ${scripts.join(', ')}`)
 let result = outDir
 
 if (tgz) {
-  const archive = resolve(destDir, `${manifest.id}.tgz`)
+  const archive = resolve(destDir, `${manifest.id}-${manifest.version}.tgz`)
   // Packed from destDir so the archive holds the <id>/ folder itself.
   execFileSync('tar', ['-czf', archive, '-C', destDir, manifest.id], { stdio: 'inherit' })
   if (tgzOnly) rmSync(outDir, { recursive: true, force: true })
