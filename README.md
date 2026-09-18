@@ -30,8 +30,7 @@ my-app/
 │   ├── images/
 │   ├── animations/
 │   └── sounds/
-├── shared/                       the platform, imported as @shared/*
-├── scripts/                      the build
+├── shared/                       app-level helpers, imported as @shared/*
 ```
 
 Both icons are optional; without them a default is used.
@@ -49,9 +48,7 @@ Anything in `src/` that isn't a source file is copied into the package. Files in
 
 A file whose extension disagrees with the folder it sits in is still placed by the folder, with a warning.
 
-`shared/` and `scripts/` come from the template. Treat them as a checked-in dependency: they are meant to become a package, and editing them means carrying that change forward yourself.
-
-Everything the app draws goes through `@shared/layout`: build a tree out of `row` / `column` / `stack`, hand it to `render()`, and send the result with `device.DisplayDraw()`. The screen is 72×16 pixels.
+Everything the app draws goes through the layout helpers in `@busy-app/busy-lib`: build a tree out of `row` / `column` / `stack`, hand it to `render()`, and send the result with `device.DisplayDraw()`. The screen is 72×16 pixels. The build itself comes from `@busy-app/cli`.
 
 ## Commands
 
@@ -77,7 +74,7 @@ dist/
     └── images/ animations/ sounds/ resources/
 ```
 
-`--tgz` packs that folder into `dist/app.busy.weather-<version>.tgz`, with the folder itself at the root of the archive.
+`--tgz` packs that folder into `dist/app.busy.weather.tgz`, with the folder itself at the root of the archive. The release workflow packs its own archive, named with the version as well.
 
 ## Manifest
 
@@ -98,8 +95,6 @@ Raise `heap_size_kib` if the app runs out of memory.
 ## Node version
 
 The app builds on Node 24 — the version in `.nvmrc` and the range `engines` allows. Node 26 breaks the build and is excluded. With `fnm` or `nvm` installed, `fnm use` / `nvm use` picks the right one up from `.nvmrc`.
-
-`@types/node` tracks that major version. Only the major lines up with Node's, so the latest in the 24 line is not `24.<node minor>`.
 
 ## Vite version
 

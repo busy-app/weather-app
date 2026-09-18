@@ -5,6 +5,6 @@
   "version": "0.1.0",
   "description": "Weather forecast",
   "author": "Flipper FZCO",
-  "heap_size_kib": 32,
+  "heap_size_kib": 128,
   "debug": false
 }
