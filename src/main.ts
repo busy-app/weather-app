@@ -10,6 +10,7 @@ import {
 import { buildGraph, HOURS, type Graph } from "./graph.ts";
 import { daysScreen } from "./screens/days.ts";
 import { forecastScreen } from "./screens/forecast.ts";
+import { loadingScreen } from "./screens/loading.ts";
 import { weatherScreen } from "./screens/weather.ts";
 import { DEFAULTS, loadSettings, type Settings } from "./settings.ts";
 import { fromUnits, setUnits, toUnits } from "./temp.ts";
@@ -33,11 +34,12 @@ let settings: Settings = DEFAULTS;
 
 /** Where the app is in its cycle. */
 type Phase =
+  | { screen: "loading"; text: string }
   | { screen: "weather" }
   | { screen: "forecast"; hour: number }
   | { screen: "days"; day: number };
 
-let phase: Phase = { screen: "weather" };
+let phase: Phase = { screen: "loading", text: "Loading settings" };
 
 /** Reads the forecast. Failures leave the last good data on screen. */
 async function refresh(): Promise<void> {
@@ -109,13 +111,18 @@ const SETTLE_MS = 60;
 
 let settling: ReturnType<typeof setTimeout> | undefined;
 
+/** The loading screen needs no data; every other one waits for the first forecast. */
+function drawable(): boolean {
+  return phase.screen === "loading" || weather !== undefined;
+}
+
 /**
  * Draws whichever screen is due, once the input has settled.
  *
  * Elements are addressed by id, so only what differs is sent: a step through the graph sends the marker and the readings, never the bars behind them.
  */
 function draw(): void {
-  if (!weather) return;
+  if (!drawable()) return;
 
   // Each tick pushes the frame back, so a turn of the knob costs one frame rather than one per tick.
   if (settling !== undefined) clearTimeout(settling);
@@ -126,7 +133,7 @@ function draw(): void {
 }
 
 async function paintNow(): Promise<void> {
-  if (!weather) return;
+  if (!drawable()) return;
 
   // A frame is already in flight; it will pick the new position up when it ends.
   if (drawing) {
@@ -149,7 +156,9 @@ async function paintNow(): Promise<void> {
 async function paint(): Promise<void> {
   // The day screen places itself; the others still go through the layout engine.
   let elements: Drawn[];
-  if (phase.screen === "weather") {
+  if (phase.screen === "loading") {
+    elements = render(loadingScreen(phase.text));
+  } else if (phase.screen === "weather") {
     elements = render(
       weatherScreen(weather!, new Date(), {
         time: settings.showTime,
@@ -185,10 +194,12 @@ async function paint(): Promise<void> {
   await Promise.all(sent);
 }
 
-/** The screens in the order the ok and start keys cycle through them. */
+/** The screens in the order the ok and start keys cycle through them. `loading` is not among them: it is left behind for good once the forecast arrives. */
 const SCREENS = ["weather", "forecast", "days"] as const;
 
-function filled(screen: Phase["screen"]): boolean {
+type Screen = (typeof SCREENS)[number];
+
+function filled(screen: Screen): boolean {
   if (screen === "forecast") return hours.length > 0;
   if (screen === "days") return days.length > 0;
   return weather !== undefined;
@@ -196,7 +207,8 @@ function filled(screen: Phase["screen"]): boolean {
 
 /** Advances to the next non-empty screen, wrapping around. The cursor restarts at the first entry. */
 function nextScreen(): void {
-  const from = SCREENS.indexOf(phase.screen);
+  // While loading there is no current screen; -1 starts the search at the first one.
+  const from = phase.screen === "loading" ? -1 : SCREENS.indexOf(phase.screen);
 
   for (let offset = 1; offset <= SCREENS.length; offset++) {
     const screen = SCREENS[(from + offset) % SCREENS.length];
@@ -231,23 +243,50 @@ function scroll(delta: number): boolean {
   return false;
 }
 
+/** How long the first forecast waits before trying again, doubling until the last entry. */
+const RETRY_MS = [3000, 6000, 12000, 24000, 48000, 60000];
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Keeps asking for the first forecast until one arrives, leaving the spinner up in between.
+ *
+ * Without this a start with no network would sit on the spinner until the refresh interval came round a quarter of an hour later.
+ */
+async function firstForecast(report: (err: unknown) => void): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await refresh();
+      phase = { screen: "weather" };
+      await paintNow();
+      return;
+    } catch (err) {
+      report(err);
+    }
+
+    await wait(RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)]!);
+  }
+}
+
 export default function run(): void {
   const report = (err: unknown) =>
     console.error(`${APP}: ${err instanceof Error ? err.message : String(err)}`);
 
   // The settings decide which place is asked for and in which scale the readings are drawn, so they come before the first forecast. loadSettings() handles its own failures.
   void (async () => {
+    void paintNow();
+
     settings = await loadSettings();
     setUnits(settings.units);
 
-    try {
-      await refresh();
-      await paintNow();
-    } catch (err) {
-      report(err);
-    }
+    phase = { screen: "loading", text: "Loading weather" };
+    void paintNow();
 
-    // Started only once the settings are in hand, so no refresh runs against the wrong place. A first forecast that failed is retried here.
+    await firstForecast(report);
+
+    // Started only once the settings are in hand, so no refresh runs against the wrong place.
     setInterval(() => {
       void refresh()
         .then(() => paintNow())
