@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@busy-app/busy-lib':
-        specifier: ^0.21.0
-        version: 0.21.0
+        specifier: ^0.21.1
+        version: 0.21.1
     devDependencies:
       '@busy-app/cli':
         specifier: ^0.2.0
@@ -24,8 +24,8 @@ importers:
 
 packages:
 
-  '@busy-app/busy-lib@0.21.0':
-    resolution: {integrity: sha512-dhZWnQxXGdenCibhZoydYnNM4ECg5ENAwENVcCN9mnMngDkqXYfvIrGlLsJl7q7ay1kxFp0uKevZgFCG9/D0Ew==}
+  '@busy-app/busy-lib@0.21.1':
+    resolution: {integrity: sha512-GPPy9pE2Q/RNWMR56xq/ccFBetnz5KELNP/4JIMUC0V7eP4v8PlLW1kjuUqI7q0gOnmagENhKALsA3jhAHBsyA==}
     engines: {node: '>=18'}
 
   '@busy-app/cli@0.2.1':
@@ -466,7 +466,7 @@ packages:
 
 snapshots:
 
-  '@busy-app/busy-lib@0.21.0':
+  '@busy-app/busy-lib@0.21.1':
     dependencies:
       openapi-fetch: 0.14.1
       protobufjs: 8.8.0
