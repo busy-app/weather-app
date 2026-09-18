@@ -25,13 +25,50 @@ const TEMP_DY = 1;
 /** Lifts the descenders of "p" and "," back onto the screen. */
 const SUB_DY = -2;
 
-/** The line under the temperature: "25 Aug, 15:34". */
-function subLine(now: Date): string {
-  return `${formatDay(now)} ${formatMonth(now)}, ${formatHM(now)}`;
+/** What the line under the temperature carries, as the settings ask for it. */
+export type SubLine = {
+  time: boolean;
+  date: boolean;
+};
+
+/** The line under the temperature: "25 Aug, 15:34", or either half of it alone. */
+function subLine(now: Date, show: SubLine): string {
+  const date = show.date ? `${formatDay(now)} ${formatMonth(now)}` : "";
+  const time = show.time ? formatHM(now) : "";
+
+  if (date && time) return `${date}, ${time}`;
+  return date || time;
 }
 
 /** The frame: the condition on the left, the reading and the clock beside it. */
-export function weatherScreen(weather: CurrentWeather, now: Date): Node {
+export function weatherScreen(weather: CurrentWeather, now: Date, show: SubLine): Node {
+  const sub = subLine(now, show);
+
+  const temp: Node = {
+    type: "text",
+    id: "text-temp",
+    text: formatTemp(weather.temp),
+    font: "bold",
+    color: WHITE,
+    dy: TEMP_DY,
+  };
+
+  // Two lines take the full height, one against each edge; the reading left alone centres itself against the animation instead.
+  const beside: Node =
+    sub === ""
+      ? temp
+      : column({ justify: "between", height: SCREEN.height }, [
+          temp,
+          {
+            type: "text",
+            id: "text-sub",
+            text: sub,
+            font: "small",
+            color: DIM,
+            dy: SUB_DY,
+          },
+        ]);
+
   return row({ align: "center", gap: GAP, height: SCREEN.height }, [
     {
       type: "animation",
@@ -42,24 +79,6 @@ export function weatherScreen(weather: CurrentWeather, now: Date): Node {
       opacity: 100,
       ...ANIMATION,
     },
-    // The two lines take the full height, one against each edge.
-    column({ justify: "between", height: SCREEN.height }, [
-      {
-        type: "text",
-        id: "text-temp",
-        text: formatTemp(weather.temp),
-        font: "bold",
-        color: WHITE,
-        dy: TEMP_DY,
-      },
-      {
-        type: "text",
-        id: "text-sub",
-        text: subLine(now),
-        font: "small",
-        color: DIM,
-        dy: SUB_DY,
-      },
-    ]),
+    beside,
   ]);
 }

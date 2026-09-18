@@ -11,6 +11,8 @@ import { buildGraph, HOURS, type Graph } from "./graph.ts";
 import { daysScreen } from "./screens/days.ts";
 import { forecastScreen } from "./screens/forecast.ts";
 import { weatherScreen } from "./screens/weather.ts";
+import { DEFAULTS, loadSettings, type Settings } from "./settings.ts";
+import { fromUnits, setUnits, toUnits } from "./temp.ts";
 import type { Drawn } from "./types.ts";
 
 /** The name the app draws under; the device clears elements by this id. */
@@ -26,6 +28,9 @@ let days: DayForecast[] = [];
 
 let graph: Graph = { bitmap: "", markers: [] };
 
+/** Read once at startup; a change takes effect when the app is restarted. */
+let settings: Settings = DEFAULTS;
+
 /** Where the app is in its cycle. */
 type Phase =
   | { screen: "weather" }
@@ -36,15 +41,16 @@ let phase: Phase = { screen: "weather" };
 
 /** Reads the forecast. Failures leave the last good data on screen. */
 async function refresh(): Promise<void> {
-  const forecast = await fetchForecast();
+  const place = settings.location;
+  const forecast = await fetchForecast(place.mode === "fixed" ? place : undefined);
 
   weather = forecast.current;
   days = forecast.days;
 
-  // Rounded once here, so bar heights and readings agree.
+  // One rounding for both, so bar heights and readings agree.
   hours = forecast.hours.slice(0, HOURS).map((hour) => ({
     ...hour,
-    temp: Math.round(hour.temp),
+    temp: fromUnits(Math.round(toUnits(hour.temp))),
   }));
 
   graph = buildGraph(hours.map((hour) => hour.temp));
@@ -144,7 +150,12 @@ async function paint(): Promise<void> {
   // The day screen places itself; the others still go through the layout engine.
   let elements: Drawn[];
   if (phase.screen === "weather") {
-    elements = render(weatherScreen(weather!, new Date()));
+    elements = render(
+      weatherScreen(weather!, new Date(), {
+        time: settings.showTime,
+        date: settings.showDate,
+      }),
+    );
   } else if (phase.screen === "forecast") {
     elements = render(forecastScreen(hours, graph, phase.hour));
   } else {
@@ -224,13 +235,25 @@ export default function run(): void {
   const report = (err: unknown) =>
     console.error(`${APP}: ${err instanceof Error ? err.message : String(err)}`);
 
-  void refresh()
-    .then(() => paintNow())
-    .catch(report);
+  // The settings decide which place is asked for and in which scale the readings are drawn, so they come before the first forecast. loadSettings() handles its own failures.
+  void (async () => {
+    settings = await loadSettings();
+    setUnits(settings.units);
 
-  setInterval(() => {
-    void refresh().catch(report);
-  }, REFRESH_MS);
+    try {
+      await refresh();
+      await paintNow();
+    } catch (err) {
+      report(err);
+    }
+
+    // Started only once the settings are in hand, so no refresh runs against the wrong place. A first forecast that failed is retried here.
+    setInterval(() => {
+      void refresh()
+        .then(() => paintNow())
+        .catch(report);
+    }, REFRESH_MS);
+  })();
 
   // `back` is left alone: the firmware hangs when the app tears itself down under it.
   listen("input", (event) => {

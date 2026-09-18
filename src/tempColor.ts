@@ -1,4 +1,4 @@
-// Temperature → color, anchored every 7.5 °C from -30 to +30.
+// Temperature → color, anchored every 7.5 °C from -30 to +30. Celsius only; Fahrenheit readings run off the last stop.
 
 type Stop = { temp: number; color: string };
 

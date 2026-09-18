@@ -74,7 +74,7 @@ export function forecastScreen(hours: ForecastHour[], graph: Graph, at: number):
         {
           type: "text",
           id: "text-temp",
-          text: formatTemp(current.temp, "°"),
+          text: formatTemp(current.temp, "degree"),
           font: "small",
           color: WHITE,
         },

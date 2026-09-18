@@ -99,7 +99,7 @@ function half(
     {
       type: "text",
       id: slot.temp,
-      text: formatTemp(temp, ""),
+      text: formatTemp(temp, "none"),
       font: "small",
       color: WHITE,
       dy,
