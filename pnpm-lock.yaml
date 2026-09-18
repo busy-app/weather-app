@@ -9,12 +9,12 @@ importers:
   .:
     dependencies:
       '@busy-app/busy-lib':
-        specifier: ^0.19.0
-        version: 0.19.0
+        specifier: ^0.21.0
+        version: 0.21.0
     devDependencies:
-      '@types/node':
-        specifier: ^24.13.3
-        version: 24.13.4
+      '@busy-app/cli':
+        specifier: ^0.2.0
+        version: 0.2.1(@types/node@24.13.4)
       typescript:
         specifier: ~7.0.2
         version: 7.0.2
@@ -24,9 +24,14 @@ importers:
 
 packages:
 
-  '@busy-app/busy-lib@0.19.0':
-    resolution: {integrity: sha512-kDDOuKwixuRqpthNspafSIQbhuCQANJjd4ycfc+KfYTc8nOX2aHtyAj8E0AqmnqBB5Dj02j2cvP7XuvciVnMTg==}
+  '@busy-app/busy-lib@0.21.0':
+    resolution: {integrity: sha512-dhZWnQxXGdenCibhZoydYnNM4ECg5ENAwENVcCN9mnMngDkqXYfvIrGlLsJl7q7ay1kxFp0uKevZgFCG9/D0Ew==}
     engines: {node: '>=18'}
+
+  '@busy-app/cli@0.2.1':
+    resolution: {integrity: sha512-4hk7LyvfNwzJQLKPVlscv8bCiSpfSe7rAMDxcaXmha4GjSYj038CamlcuNbqLyr4C1saA0u+jdEEsy1c/VKWsA==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   '@emnapi/core@1.11.1':
     resolution: {integrity: sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ==}
@@ -461,10 +466,27 @@ packages:
 
 snapshots:
 
-  '@busy-app/busy-lib@0.19.0':
+  '@busy-app/busy-lib@0.21.0':
     dependencies:
       openapi-fetch: 0.14.1
       protobufjs: 8.8.0
+
+  '@busy-app/cli@0.2.1(@types/node@24.13.4)':
+    dependencies:
+      vite: 8.1.4(@types/node@24.13.4)
+    transitivePeerDependencies:
+      - '@types/node'
+      - '@vitejs/devtools'
+      - esbuild
+      - jiti
+      - less
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - terser
+      - tsx
+      - yaml
 
   '@emnapi/core@1.11.1':
     dependencies:
@@ -550,6 +572,7 @@ snapshots:
   '@types/node@24.13.4':
     dependencies:
       undici-types: 7.18.2
+    optional: true
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true
@@ -747,7 +770,8 @@ snapshots:
       '@typescript/typescript-win32-arm64': 7.0.2
       '@typescript/typescript-win32-x64': 7.0.2
 
-  undici-types@7.18.2: {}
+  undici-types@7.18.2:
+    optional: true
 
   vite@8.1.4(@types/node@24.13.4):
     dependencies:
