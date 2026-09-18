@@ -4,6 +4,17 @@ Weather forecast
 
 A JavaScript app for the BUSY Bar, generated from the BUSY JS app template.
 
+## Screens
+
+Three, in a ring: the weather now, the next 24 hours as a graph, and the days after them. An empty screen is skipped.
+
+| Input | |
+| --- | --- |
+| `ok`, `start` | the next screen |
+| encoder | steps through the hours or the days, stopping at either end |
+
+The forecast is fetched on launch and every 15 minutes after.
+
 ## Getting started
 
 ```sh

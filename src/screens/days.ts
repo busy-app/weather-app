@@ -6,9 +6,9 @@
 //   └────────────────────────┘
 
 import { formatDay, formatMonth } from "@shared/datetime";
-import { column, row, SCREEN, stack, type Node } from "@shared/layout";
-import { generateXpm2 } from "@shared/xpm2";
+import { column, list, render, row, SCREEN, stack, type Node } from "@busy-app/busy-lib";
 import type { DayForecast } from "../api.ts";
+import type { Drawn } from "../types.ts";
 import { formatTemp } from "../temp.ts";
 import { iconFor } from "../wmo.ts";
 
@@ -23,16 +23,13 @@ const LABEL_W = 21;
 const DAY_COLOR = "#F5A623FF";
 const NIGHT_COLOR = "#4A90D9FF";
 
-const PANEL_W = 48;
+const PANEL_W = 47;
 const PANEL_COLOR = "#0A1A4AFF";
 
 /** Redrawing one element alone leaves the panel on top of it unless the order is spelled out. */
 const PANEL_Z = 10;
 const CONTENT_Z = 50;
 
-/** Rows of the date list; the neighbours fall off the edges. */
-const DATE_STEP = 7;
-const DATE_MIDDLE = 5;
 
 const WHITE = "#FFFFFFFF";
 const DIM = "#808080FF";
@@ -40,43 +37,37 @@ const DIM = "#808080FF";
 const TOP_DY = 0;
 const BOTTOM_DY = 0;
 
+const LIST_W = SCREEN.width - PANEL_W - 1;
+const LIST_H = SCREEN.height;
+
 /** Clear space between the dates and the scrollbar. */
-const DATE_GAP = 1;
+const DATE_GAP = 2;
 
 const BAR_W = 1;
-const TRACK_COLOR = "#404040";
-const THUMB_COLOR = "#FFFFFF";
+const TRACK_COLOR = "#404040FF";
+const THUMB_COLOR = "#FFFFFFFF";
 
-/** A full-height track with a thumb marking the selected day. */
-function scrollbar(count: number, at: number): string {
-  const track = ".";
-  const thumb = "#";
-  const size = Math.max(2, Math.round(SCREEN.height / count));
-  const top = Math.min(
-    SCREEN.height - size,
-    Math.round((at / Math.max(1, count - 1)) * (SCREEN.height - size)),
-  );
-
-  const rows: string[] = [];
-  for (let y = 0; y < SCREEN.height; y++) {
-    rows.push(y >= top && y < top + size ? thumb : track);
-  }
-
-  return generateXpm2({
-    palette: { [track]: TRACK_COLOR, [thumb]: THUMB_COLOR },
-    grid: rows,
-  });
-}
+/** The dates as they are drawn, by ISO date. */
+const dates = new Map<string, string>();
 
 /** "23 May" */
 function formatDate(date: string): string {
+  const known = dates.get(date);
+  if (known !== undefined) return known;
+
   const at = new Date(`${date}T12:00:00`);
-  return `${formatDay(at)} ${formatMonth(at)}`;
+  const text = `${formatDay(at)} ${formatMonth(at)}`;
+  dates.set(date, text);
+  return text;
 }
 
-/** One half of the day: its name, its condition and its mean temperature. */
+/**
+ * One half of the day: its name, its condition and its mean temperature.
+ *
+ * @param slot - Which element ids this half draws under. See DAY_SLOT.
+ */
 function half(
-  name: string,
+  slot: { label: string; icon: string; temp: string },
   label: string,
   color: string,
   code: number,
@@ -88,7 +79,7 @@ function half(
     row({ width: LABEL_W }, [
       {
         type: "text",
-        id: `${name}-label`,
+        id: slot.label,
         text: label,
         font: "small",
         color,
@@ -98,7 +89,7 @@ function half(
     ]),
     {
       type: "image",
-      id: `${name}-icon`,
+      id: slot.icon,
       path: `images/${iconFor(code, daylight)}`,
       opacity: 100,
       dy,
@@ -107,7 +98,7 @@ function half(
     },
     {
       type: "text",
-      id: `${name}-temp`,
+      id: slot.temp,
       text: formatTemp(temp, ""),
       font: "small",
       color: WHITE,
@@ -117,19 +108,16 @@ function half(
   ]);
 }
 
-/**
- * The frame.
- *
- * @param days every day of the forecast
- * @param at index of the day on show
- */
-export function daysScreen(days: DayForecast[], at: number): Node {
-  const current = days[at];
+/** Ids shared with the other screens, so moving between them redraws an element instead of replacing it. */
+const DAY_SLOT = { label: "text-a", icon: "image-icon", temp: "text-temp" };
+const NIGHT_SLOT = { label: "text-b", icon: "image-icon2", temp: "text-sub" };
 
+/** The panel beside the dates: the labels, conditions and readings for the day on show. */
+function panel(current: DayForecast): Node {
   return stack({}, [
     {
       type: "rectangle",
-      id: "panel",
+      id: "rect-panel",
       width: PANEL_W,
       height: SCREEN.height,
       // Without these a rectangle is a white outline and nothing else.
@@ -138,57 +126,40 @@ export function daysScreen(days: DayForecast[], at: number): Node {
       border_width: 0,
       z_index: PANEL_Z,
     },
-    row({ height: SCREEN.height }, [
-      column({ justify: "between", width: PANEL_W, height: SCREEN.height }, [
-        half("day", "DAY", DAY_COLOR, current.dayCode, current.day, TOP_DY, true),
-        half("night", "NIGHT", NIGHT_COLOR, current.nightCode, current.night, BOTTOM_DY, false),
-      ]),
-      stack(
-        {
-          width: SCREEN.width - PANEL_W - BAR_W,
-          // In a stack `justify` is the horizontal placement.
-          justify: "end",
-          padding: { right: DATE_GAP },
-        },
-        [
-          {
-            type: "text",
-            id: "date-prev",
-            text: at > 0 ? formatDate(days[at - 1].date) : "",
-            font: "small",
-            color: DIM,
-            dy: DATE_MIDDLE - DATE_STEP,
-            z_index: CONTENT_Z,
-          },
-          {
-            type: "text",
-            id: "date",
-            text: formatDate(current.date),
-            font: "small",
-            color: WHITE,
-            dy: DATE_MIDDLE,
-            z_index: CONTENT_Z,
-          },
-          {
-            type: "text",
-            id: "date-next",
-            text: at + 1 < days.length ? formatDate(days[at + 1].date) : "",
-            font: "small",
-            color: DIM,
-            dy: DATE_STEP + DATE_MIDDLE,
-            z_index: CONTENT_Z,
-          },
-        ],
-      ),
-      {
-        type: "xpmbitmap",
-        id: "scrollbar",
-        data: scrollbar(days.length, at),
-        opacity: 100,
-        width: BAR_W,
-        height: SCREEN.height,
-        z_index: CONTENT_Z,
-      },
+    column({ justify: "between", width: PANEL_W, height: SCREEN.height }, [
+      half(DAY_SLOT, "DAY", DAY_COLOR, current.dayCode, current.day, TOP_DY, true),
+      half(NIGHT_SLOT, "NIGHT", NIGHT_COLOR, current.nightCode, current.night, BOTTOM_DY, false),
     ]),
   ]);
+}
+
+/**
+ * The frame. Only the panel goes through the layout engine; `list` places the dates itself.
+ *
+ * @param days every day of the forecast
+ * @param at index of the day on show
+ */
+export function daysScreen(days: DayForecast[], at: number): Drawn[] {
+  const labels = days.map((day) => formatDate(day.date));
+
+  return [
+    ...render(panel(days[at])),
+    ...list({
+      id: "list",
+      items: labels,
+      selected: at,
+      x: PANEL_W + 1,
+      y: 0,
+      width: LIST_W,
+      height: LIST_H,
+      font: "small",
+      gap: DATE_GAP,
+      style: { color: DIM, activeColor: WHITE },
+      scrollbar: "right",
+      scrollbarStyle: { trackColor: TRACK_COLOR, thumbColor: THUMB_COLOR },
+      scrollbarGap: 1,
+      scrollbarWidth: BAR_W,
+      z_index: CONTENT_Z,
+    }),
+  ];
 }

@@ -7,9 +7,9 @@
 //
 // Everything on it describes the hour the marker stands on, not the present one.
 
-import { column, row, stack, type Node } from "@shared/layout";
+import { column, row, stack, type Node } from "@busy-app/busy-lib";
 import type { ForecastHour } from "../api.ts";
-import { BAR_W, GRAPH_H, GRAPH_W, markerBox, renderGraph, renderMarker } from "../graph.ts";
+import { BAR_W, GRAPH_H, GRAPH_W, renderMarker, type Graph } from "../graph.ts";
 import { formatTemp } from "../temp.ts";
 import { iconFor } from "../wmo.ts";
 
@@ -33,24 +33,23 @@ function formatHour(hour: number): string {
  * @param hours every hour the graph draws
  * @param at index into `hours` of the one the marker sits on
  */
-export function forecastScreen(hours: ForecastHour[], at: number): Node {
+export function forecastScreen(hours: ForecastHour[], graph: Graph, at: number): Node {
   const current = hours[at];
-  const temps = hours.map((h) => h.temp);
-  const box = markerBox(temps, at);
+  const box = graph.markers[at];
 
   // Apart, so a step redraws the marker and leaves the graph alone.
-  const graph: Node[] = [
+  const bars: Node[] = [
     {
       type: "xpmbitmap",
-      id: "graph",
-      data: renderGraph(temps),
+      id: "xpm-graph",
+      data: graph.bitmap,
       opacity: 100,
       width: GRAPH_W,
       height: GRAPH_H,
     },
     {
       type: "xpmbitmap",
-      id: "marker",
+      id: "xpm-marker",
       data: renderMarker(box.height),
       opacity: 100,
       width: BAR_W,
@@ -67,14 +66,14 @@ export function forecastScreen(hours: ForecastHour[], at: number): Node {
       row({ align: "center", gap: GAP }, [
         {
           type: "image",
-          id: "condition-icon",
+          id: "image-icon",
           path: `images/${iconFor(current.code, current.daylight)}`,
           opacity: 100,
           ...ICON,
         },
         {
           type: "text",
-          id: "temp",
+          id: "text-temp",
           text: formatTemp(current.temp, "°"),
           font: "small",
           color: WHITE,
@@ -82,12 +81,12 @@ export function forecastScreen(hours: ForecastHour[], at: number): Node {
       ]),
       {
         type: "text",
-        id: "hour",
+        id: "text-sub",
         text: formatHour(current.hour),
         font: "small",
         color: DIM,
       },
     ]),
-    stack({ width: GRAPH_W, height: GRAPH_H }, graph),
+    stack({ width: GRAPH_W, height: GRAPH_H }, bars),
   ]);
 }

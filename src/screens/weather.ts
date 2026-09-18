@@ -8,7 +8,7 @@
 // The animation holds the left edge; everything else is text stacked beside it.
 
 import { formatDay, formatHM, formatMonth } from "@shared/datetime";
-import { column, row, SCREEN, type Node } from "@shared/layout";
+import { column, row, SCREEN, type Node } from "@busy-app/busy-lib";
 import type { CurrentWeather } from "../api.ts";
 import { formatTemp } from "../temp.ts";
 import { animationFor } from "../wmo.ts";
@@ -35,7 +35,7 @@ export function weatherScreen(weather: CurrentWeather, now: Date): Node {
   return row({ align: "center", gap: GAP, height: SCREEN.height }, [
     {
       type: "animation",
-      id: "condition-anim",
+      id: "anim",
       path: `animations/${animationFor(weather.code, weather.daylight)}`,
       loop: true,
       await_previous_end: false,
@@ -46,7 +46,7 @@ export function weatherScreen(weather: CurrentWeather, now: Date): Node {
     column({ justify: "between", height: SCREEN.height }, [
       {
         type: "text",
-        id: "temp",
+        id: "text-temp",
         text: formatTemp(weather.temp),
         font: "bold",
         color: WHITE,
@@ -54,7 +54,7 @@ export function weatherScreen(weather: CurrentWeather, now: Date): Node {
       },
       {
         type: "text",
-        id: "sub",
+        id: "text-sub",
         text: subLine(now),
         font: "small",
         color: DIM,

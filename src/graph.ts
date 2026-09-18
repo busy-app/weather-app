@@ -1,6 +1,6 @@
 // The hourly forecast as an XPM2 bitmap: one hour per 3-pixel bar.
 
-import { generateXpm2 } from "@shared/xpm2";
+import { generateXpm2 } from "@busy-app/busy-lib";
 import { tempColor } from "./tempColor.ts";
 
 export const HOURS = 24;
@@ -31,10 +31,40 @@ function heights(temps: number[]): number[] {
   });
 }
 
-/** The bars alone; the marker is a separate element drawn over them. */
-export function renderGraph(temps: number[]): string {
+/**
+ * The graph as it is drawn: the bitmap of the bars, and where the marker sits on each hour.
+ *
+ * Neither depends on the hour the marker is on, so both are built once per forecast.
+ */
+export interface Graph {
+  /** The bars as an XPM2 bitmap. */
+  readonly bitmap: string
+  /** The marker box for each hour, indexed as `temps` is. */
+  readonly markers: readonly MarkerBox[]
+}
+
+export interface MarkerBox {
+  readonly x: number
+  readonly y: number
+  readonly height: number
+}
+
+/** Builds everything the forecast screen draws from the temperatures alone. */
+export function buildGraph(temps: number[]): Graph {
   const hours = temps.slice(0, HOURS);
   const bars = heights(hours);
+
+  const markers = bars.map((bar, hour) => {
+    // The head straddles the bar's top row.
+    const y = Math.max(0, GRAPH_H - bar - 1);
+    return { x: hour * BAR_W, y, height: GRAPH_H - y };
+  });
+
+  return { bitmap: renderBars(hours, bars), markers };
+}
+
+/** The bars alone; the marker is a separate element drawn over them. */
+function renderBars(hours: number[], bars: number[]): string {
 
   // One symbol per distinct color; the palette holds at most 32.
   const symbols = new Map<string, string>();
@@ -70,16 +100,20 @@ export function renderGraph(temps: number[]): string {
   return generateXpm2({ palette, grid: grid.map((row) => row.join("")) });
 }
 
-/** Where the marker for `hour` sits, and how tall it is. */
-export function markerBox(temps: number[], hour: number): { x: number; y: number; height: number } {
-  const bars = heights(temps.slice(0, HOURS));
-  // The head straddles the bar's top row.
-  const y = Math.max(0, GRAPH_H - bars[hour] - 1);
-  return { x: hour * BAR_W, y, height: GRAPH_H - y };
-}
+/** The marker bitmaps by height; a bar has only so many. */
+const markers = new Map<number, string>();
 
 /** A 3×3 head over the bar, then a single-pixel stem to the foot of the graph. */
 export function renderMarker(height: number): string {
+  const known = markers.get(height);
+  if (known !== undefined) return known;
+
+  const bitmap = buildMarker(height);
+  markers.set(height, bitmap);
+  return bitmap;
+}
+
+function buildMarker(height: number): string {
   const empty = ".";
   const ink = "#";
   const middle = BAR_W >> 1;
