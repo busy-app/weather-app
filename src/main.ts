@@ -16,11 +16,23 @@ import { DEFAULTS, loadSettings, type Settings } from "./settings.ts";
 import { fromUnits, setUnits, toUnits } from "./temp.ts";
 import type { Drawn } from "./types.ts";
 
+type Phase =
+  | { screen: "loading"; text: string }
+  | { screen: "weather" }
+  | { screen: "forecast"; hour: number }
+  | { screen: "days"; day: number };
+
 /** The name the app draws under; the device clears elements by this id. */
 const APP = manifest.id;
 
 /** How often the forecast is fetched again. */
 const REFRESH_MS = 15 * 60 * 1000;
+
+/** The clock on the weather screen is repainted on the minute. */
+const MINUTE_MS = 60 * 1000;
+
+/** Added to the wait so the tick lands after the minute has rolled over, not on its edge. */
+const MINUTE_SKEW_MS = 50;
 
 /** The current conditions, the hours of the graph, and the days after them. */
 let weather: CurrentWeather | undefined;
@@ -31,13 +43,6 @@ let graph: Graph = { bitmap: "", markers: [] };
 
 /** Read once at startup; a change takes effect when the app is restarted. */
 let settings: Settings = DEFAULTS;
-
-/** Where the app is in its cycle. */
-type Phase =
-  | { screen: "loading"; text: string }
-  | { screen: "weather" }
-  | { screen: "forecast"; hour: number }
-  | { screen: "days"; day: number };
 
 let phase: Phase = { screen: "loading", text: "Loading settings" };
 
@@ -110,6 +115,27 @@ let pending = false;
 const SETTLE_MS = 60;
 
 let settling: ReturnType<typeof setTimeout> | undefined;
+let refreshTimer: ReturnType<typeof setInterval> | undefined;
+let clockTimer: ReturnType<typeof setTimeout> | undefined;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
+let endWait: (() => void) | undefined;
+let unbindInput: BusyUnbind | undefined;
+let stopped = false;
+
+function stop() {
+  if (stopped) return;
+
+  stopped = true;
+
+  if (refreshTimer !== undefined) clearInterval(refreshTimer);
+  if (clockTimer !== undefined) clearTimeout(clockTimer);
+  if (settling !== undefined) clearTimeout(settling);
+  if (retryTimer !== undefined) clearTimeout(retryTimer);
+
+  endWait?.();
+
+  if (unbindInput) setTimeout(unbindInput, 10);
+}
 
 /** The loading screen needs no data; every other one waits for the first forecast. */
 function drawable(): boolean {
@@ -122,7 +148,7 @@ function drawable(): boolean {
  * Elements are addressed by id, so only what differs is sent: a step through the graph sends the marker and the readings, never the bars behind them.
  */
 function draw(): void {
-  if (!drawable()) return;
+  if (stopped || !drawable()) return;
 
   // Each tick pushes the frame back, so a turn of the knob costs one frame rather than one per tick.
   if (settling !== undefined) clearTimeout(settling);
@@ -133,7 +159,7 @@ function draw(): void {
 }
 
 async function paintNow(): Promise<void> {
-  if (!drawable()) return;
+  if (stopped || !drawable()) return;
 
   // A frame is already in flight; it will pick the new position up when it ends.
   if (drawing) {
@@ -146,7 +172,7 @@ async function paintNow(): Promise<void> {
     do {
       pending = false;
       await paint();
-    } while (pending);
+    } while (pending && !stopped);
   } finally {
     drawing = false;
   }
@@ -156,6 +182,7 @@ async function paintNow(): Promise<void> {
 async function paint(): Promise<void> {
   // The day screen places itself; the others still go through the layout engine.
   let elements: Drawn[];
+
   if (phase.screen === "loading") {
     elements = render(loadingScreen(phase.text));
   } else if (phase.screen === "weather") {
@@ -247,7 +274,29 @@ function scroll(delta: number): boolean {
 const RETRY_MS = [3000, 6000, 12000, 24000, 48000, 60000];
 
 function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    endWait = resolve;
+    retryTimer = setTimeout(() => {
+      retryTimer = undefined;
+      endWait = undefined;
+      resolve();
+    }, ms);
+  });
+}
+
+function scheduleClock(report: (err: unknown) => void) {
+  if (stopped || !settings.showTime) return;
+
+  clockTimer = setTimeout(
+    () => {
+      clockTimer = undefined;
+      if (stopped) return;
+
+      if (phase.screen === "weather") void paintNow().catch(report);
+      scheduleClock(report);
+    },
+    MINUTE_MS - (Date.now() % MINUTE_MS) + MINUTE_SKEW_MS,
+  );
 }
 
 /**
@@ -255,10 +304,11 @@ function wait(ms: number): Promise<void> {
  *
  * Without this a start with no network would sit on the spinner until the refresh interval came round a quarter of an hour later.
  */
-async function firstForecast(report: (err: unknown) => void): Promise<void> {
-  for (let attempt = 0; ; attempt++) {
+async function firstForecast(report: (err: unknown) => void) {
+  for (let attempt = 0; !stopped; attempt++) {
     try {
       await refresh();
+      if (stopped) return;
       phase = { screen: "weather" };
       await paintNow();
       return;
@@ -270,7 +320,7 @@ async function firstForecast(report: (err: unknown) => void): Promise<void> {
   }
 }
 
-export default function run(): void {
+export default function run() {
   const report = (err: unknown) =>
     console.error(`${APP}: ${err instanceof Error ? err.message : String(err)}`);
 
@@ -285,24 +335,33 @@ export default function run(): void {
     void paintNow();
 
     await firstForecast(report);
+    if (stopped) return;
 
     // Started only once the settings are in hand, so no refresh runs against the wrong place.
-    setInterval(() => {
+    refreshTimer = setInterval(() => {
       void refresh()
         .then(() => paintNow())
         .catch(report);
     }, REFRESH_MS);
+
+    scheduleClock(report);
   })();
 
-  // `back` is left alone: the firmware hangs when the app tears itself down under it.
-  listen("input", (event) => {
+  unbindInput = listen("input", (event) => {
+    if (stopped) return;
+
     if (event.key === "encoder") {
       if (!scroll(event.delta)) return;
       draw();
       return;
     }
 
-    if (event.key === "back" || event.action !== "press") return;
+    if (event.action !== "press") return;
+
+    if (event.key === "back") {
+      stop();
+      return;
+    }
 
     nextScreen();
     void paintNow().catch(report);
