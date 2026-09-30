@@ -292,7 +292,7 @@ function scheduleClock(report: (err: unknown) => void) {
       clockTimer = undefined;
       if (stopped) return;
 
-      if (phase.screen === "weather") void paintNow().catch(report);
+      if (phase.screen === "weather") paintNow().catch(report);
       scheduleClock(report);
     },
     MINUTE_MS - (Date.now() % MINUTE_MS) + MINUTE_SKEW_MS,
