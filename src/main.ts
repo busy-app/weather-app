@@ -1,5 +1,4 @@
-import { device } from "@shared/device";
-import { render } from "@busy-app/busy-lib";
+import { displayClear, displayDraw } from "@shared/device";
 import manifest from "./appmeta/manifest.json";
 import {
   fetchForecast,
@@ -14,7 +13,7 @@ import { loadingScreen } from "./screens/loading.ts";
 import { weatherScreen } from "./screens/weather.ts";
 import { DEFAULTS, loadSettings, type Settings } from "./settings.ts";
 import { fromUnits, setUnits, toUnits } from "./temp.ts";
-import type { Drawn } from "./types.ts";
+import { Frame } from "./frame.ts";
 
 type Phase =
   | { screen: "loading"; text: string }
@@ -39,7 +38,7 @@ let weather: CurrentWeather | undefined;
 let hours: ForecastHour[] = [];
 let days: DayForecast[] = [];
 
-let graph: Graph = { bitmap: "", markers: [] };
+let graph: Graph = { bitmap: "", pins: [] };
 
 /** Read once at startup; a change takes effect when the app is restarted. */
 let settings: Settings = DEFAULTS;
@@ -63,58 +62,32 @@ async function refresh(): Promise<void> {
   graph = buildGraph(hours.map((hour) => hour.temp));
 }
 
-/** Every field a screen may change. One left out here is one that never reaches the screen again. */
-const FIELDS = [
-  "text",
-  "path",
-  "data",
-  "x",
-  "y",
-  "width",
-  "height",
-  "color",
-  "font",
-  "opacity",
-  "z_index",
-  "fill_colors",
-] as const;
+/** The elements on screen, kept between frames so only what moved is rebuilt and sent. */
+const frame = new Frame();
 
-function differs(before: Drawn | undefined, now: Drawn): boolean {
-  if (!before) return true;
-
-  const was = before as Record<string, unknown>;
-  const is = now as Record<string, unknown>;
-
-  for (let i = 0; i < FIELDS.length; i++) {
-    const key = FIELDS[i]!;
-    const a = was[key];
-    const b = is[key];
-    if (a === b) continue;
-
-    // Only `fill_colors` is an array, and only ever a short one.
-    if (Array.isArray(a) && Array.isArray(b)) {
-      if (a.length !== b.length) return true;
-      for (let j = 0; j < a.length; j++) if (a[j] !== b[j]) return true;
-      continue;
-    }
-
-    return true;
-  }
-
-  return false;
-}
-
-/** What is on screen right now, by id, as it was last sent. */
-let drawn = new Map<string, Drawn>();
+/** The requests of the frame in flight; reused so that a frame does not allocate it. */
+const sends: Promise<unknown>[] = [];
 
 /** A draw is in flight; a request made while it runs is coalesced into one frame after it. */
 let drawing = false;
 let pending = false;
 
-/** How long the app waits for the encoder to settle. A frame costs far more than the gap between two ticks. */
-const SETTLE_MS = 60;
+/** Inputs seen since the last frame was sent; they all wait for the one draw. */
+let inputs = 0;
 
-let settling: ReturnType<typeof setTimeout> | undefined;
+/** When the first of those inputs arrived, for the end-to-end latency. */
+let inputsAt = 0;
+
+/** How long the last frame spent building and diffing its elements, and then on the wire. */
+let prepareMs = 0;
+let requestMs = 0;
+
+/** Records an input that changes the frame, so the draw it causes can be measured. */
+function noteInput(): void {
+  if (inputs === 0) inputsAt = Date.now();
+  inputs++;
+}
+
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 let clockTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -129,7 +102,6 @@ function stop() {
 
   if (refreshTimer !== undefined) clearInterval(refreshTimer);
   if (clockTimer !== undefined) clearTimeout(clockTimer);
-  if (settling !== undefined) clearTimeout(settling);
   if (retryTimer !== undefined) clearTimeout(retryTimer);
 
   endWait?.();
@@ -143,21 +115,10 @@ function drawable(): boolean {
 }
 
 /**
- * Draws whichever screen is due, once the input has settled.
+ * Draws whichever screen is due.
  *
- * Elements are addressed by id, so only what differs is sent: a step through the graph sends the marker and the readings, never the bars behind them.
+ * Elements are addressed by id, so only what differs is sent: a step through the graph sends the pin and the readings, never the bars behind them.
  */
-function draw(): void {
-  if (stopped || !drawable()) return;
-
-  // Each tick pushes the frame back, so a turn of the knob costs one frame rather than one per tick.
-  if (settling !== undefined) clearTimeout(settling);
-  settling = setTimeout(() => {
-    settling = undefined;
-    void paintNow();
-  }, SETTLE_MS);
-}
-
 async function paintNow(): Promise<void> {
   if (stopped || !drawable()) return;
 
@@ -171,7 +132,23 @@ async function paintNow(): Promise<void> {
   try {
     do {
       pending = false;
+
+      // Take the inputs this frame answers and start a fresh window for any that arrive while it runs.
+      const settled = inputs;
+      const since = inputsAt;
+      inputs = 0;
+      inputsAt = 0;
+
+      const started = Date.now();
       await paint();
+
+      if (settled > 0) {
+        const done = Date.now();
+        console.log(
+          `${APP}: input ${settled} -> ${done - since}ms ` +
+            `(wait ${started - since}, prepare ${prepareMs}, request ${requestMs})`,
+        );
+      }
     } while (pending && !stopped);
   } finally {
     drawing = false;
@@ -180,45 +157,37 @@ async function paintNow(): Promise<void> {
 
 /** Sends one frame: what changed, then what is no longer on it. */
 async function paint(): Promise<void> {
-  // The day screen places itself; the others still go through the layout engine.
-  let elements: Drawn[];
+  const began = Date.now();
+
+  frame.begin();
 
   if (phase.screen === "loading") {
-    elements = render(loadingScreen(phase.text));
+    loadingScreen(frame, phase.text);
   } else if (phase.screen === "weather") {
-    elements = render(
-      weatherScreen(weather!, new Date(), {
-        time: settings.showTime,
-        date: settings.showDate,
-      }),
-    );
+    weatherScreen(frame, weather!, new Date(), {
+      time: settings.showTime,
+      date: settings.showDate,
+    });
   } else if (phase.screen === "forecast") {
-    elements = render(forecastScreen(hours, graph, phase.hour));
+    forecastScreen(frame, hours, graph, phase.hour);
   } else {
-    elements = daysScreen(days, phase.day);
+    daysScreen(frame, days, phase.day);
   }
 
-  const next = new Map<string, Drawn>();
-  const changed: typeof elements = [];
-  for (const element of elements) {
-    next.set(element.id, element);
-    if (differs(drawn.get(element.id), element)) changed.push(element);
-  }
-
-  const stale: string[] = [];
-  for (const id of drawn.keys()) if (!next.has(id)) stale.push(id);
-
-  drawn = next;
+  frame.end();
+  prepareMs = Date.now() - began;
 
   // Both at once; neither names an element the other does, so the order they arrive in does not matter.
-  const sent: Promise<unknown>[] = [];
-  if (changed.length > 0) {
-    sent.push(device.DisplayDraw({ application_name: APP, priority: 50, elements: changed }));
+  sends.length = 0;
+  if (frame.changed.length > 0) {
+    sends.push(displayDraw({ application_name: APP, priority: 50, elements: frame.changed }));
   }
-  if (stale.length > 0) {
-    sent.push(device.DisplayClear({ application_name: APP, element_ids: stale }));
+  if (frame.stale.length > 0) {
+    sends.push(displayClear({ application_name: APP, element_ids: frame.stale }));
   }
-  await Promise.all(sent);
+  await Promise.all(sends);
+
+  requestMs = Date.now() - began - prepareMs;
 }
 
 /** The screens in the order the ok and start keys cycle through them. `loading` is not among them: it is left behind for good once the forecast arrives. */
@@ -352,7 +321,8 @@ export default function run() {
 
     if (event.key === "encoder") {
       if (!scroll(event.delta)) return;
-      draw();
+      noteInput();
+      void paintNow().catch(report);
       return;
     }
 
@@ -363,6 +333,7 @@ export default function run() {
       return;
     }
 
+    noteInput();
     nextScreen();
     void paintNow().catch(report);
   });

@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      '@busy-app/busy-lib':
-        specifier: ^0.21.1
-        version: 0.21.1
     devDependencies:
       '@busy-app/cli':
         specifier: ^0.2.0
@@ -23,10 +19,6 @@ importers:
         version: 8.1.4(@types/node@24.13.4)
 
 packages:
-
-  '@busy-app/busy-lib@0.21.1':
-    resolution: {integrity: sha512-GPPy9pE2Q/RNWMR56xq/ccFBetnz5KELNP/4JIMUC0V7eP4v8PlLW1kjuUqI7q0gOnmagENhKALsA3jhAHBsyA==}
-    engines: {node: '>=18'}
 
   '@busy-app/cli@0.2.1':
     resolution: {integrity: sha512-4hk7LyvfNwzJQLKPVlscv8bCiSpfSe7rAMDxcaXmha4GjSYj038CamlcuNbqLyr4C1saA0u+jdEEsy1c/VKWsA==}
@@ -368,19 +360,10 @@ packages:
     resolution: {integrity: sha512-WkUDrojuJs0xkgGf2udWxa3yGBRxPtxUkB79i6aCZLRgc7PM8fZe9TosfPDcvEpQZbuFASnHYmRLBLUbmLOIIA==}
     engines: {node: '>= 12.0.0'}
 
-  long@5.3.2:
-    resolution: {integrity: sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA==}
-
   nanoid@3.3.18:
     resolution: {integrity: sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
-
-  openapi-fetch@0.14.1:
-    resolution: {integrity: sha512-l7RarRHxlEZYjMLd/PR0slfMVse2/vvIAGm75/F7J6MlQ8/b9uUQmUF2kCPrQhJqMXSxmYWObVgeYXbFYzZR+A==}
-
-  openapi-typescript-helpers@0.0.15:
-    resolution: {integrity: sha512-opyTPaunsklCBpTK8JGef6mfPhLSnyy5a0IN9vKtx3+4aExf+KxEqYwIy3hqkedXIB97u357uLMJsOnm3GVjsw==}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -392,10 +375,6 @@ packages:
   postcss@8.5.28:
     resolution: {integrity: sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==}
     engines: {node: ^10 || ^12 || >=14}
-
-  protobufjs@8.8.0:
-    resolution: {integrity: sha512-N3xhQ5yyBx3vQq4gubBfASzYhJGNzeDbjqBpu61g7UVylsN/qyffU96TKWD3GbbLOKF82VGNRNvv1+BFgE31Eg==}
-    engines: {node: '>=12.0.0'}
 
   rolldown@1.1.5:
     resolution: {integrity: sha512-t9z29cJjXf/vxQ8dyhCSpt6H6aSwHTk8cT5I3iy6SMXuFpk5mB6PL6XfC8PCwrPTx93udwKUm9HRteAlTGBLiA==}
@@ -465,11 +444,6 @@ packages:
         optional: true
 
 snapshots:
-
-  '@busy-app/busy-lib@0.21.1':
-    dependencies:
-      openapi-fetch: 0.14.1
-      protobufjs: 8.8.0
 
   '@busy-app/cli@0.2.1(@types/node@24.13.4)':
     dependencies:
@@ -692,15 +666,7 @@ snapshots:
       lightningcss-win32-arm64-msvc: 1.33.0
       lightningcss-win32-x64-msvc: 1.33.0
 
-  long@5.3.2: {}
-
   nanoid@3.3.18: {}
-
-  openapi-fetch@0.14.1:
-    dependencies:
-      openapi-typescript-helpers: 0.0.15
-
-  openapi-typescript-helpers@0.0.15: {}
 
   picocolors@1.1.1: {}
 
@@ -711,10 +677,6 @@ snapshots:
       nanoid: 3.3.18
       picocolors: 1.1.1
       source-map-js: 1.2.1
-
-  protobufjs@8.8.0:
-    dependencies:
-      long: 5.3.2
 
   rolldown@1.1.5:
     dependencies:

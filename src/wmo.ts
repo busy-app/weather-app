@@ -64,18 +64,45 @@ export function conditionOf(wmo: number): Condition {
   return CONDITIONS.get(wmo) ?? "cloudy";
 }
 
-/** Base name of the assets for a code, without an extension. */
+/**
+ * The base name of a code's assets, e.g. "clear_day".
+ *
+ * The names are built once per code and kept: a frame asks for the same few again and again,
+ * and a stable string also makes the "did this change?" test an identity check.
+ */
 function assetFor(wmo: number, daylight: boolean): string {
-  const condition = conditionOf(wmo);
-  return DIURNAL.has(condition) ? `${condition}_${daylight ? "day" : "night"}` : condition;
+  const key = wmo * 2 + (daylight ? 1 : 0);
+  let name = ASSETS.get(key);
+  if (name === undefined) {
+    const condition = conditionOf(wmo);
+    name = DIURNAL.has(condition) ? `${condition}_${daylight ? "day" : "night"}` : condition;
+    ASSETS.set(key, name);
+  }
+  return name;
 }
 
-/** Every condition has an icon of its own. */
+const ASSETS = new Map<number, string>();
+const ICONS = new Map<number, string>();
+const ANIMATIONS = new Map<number, string>();
+
+/** Path of the icon for a code, relative to the app's assets: "images/clear_day.png". */
 export function iconFor(wmo: number, daylight: boolean): string {
-  return `${assetFor(wmo, daylight)}.png`;
+  const key = wmo * 2 + (daylight ? 1 : 0);
+  let path = ICONS.get(key);
+  if (path === undefined) {
+    path = `images/${assetFor(wmo, daylight)}.png`;
+    ICONS.set(key, path);
+  }
+  return path;
 }
 
-/** Every icon has an animation under the same name. */
+/** Path of the animation for a code, relative to the app's assets: "animations/clear_day.anim". */
 export function animationFor(wmo: number, daylight: boolean): string {
-  return `${assetFor(wmo, daylight)}.anim`;
+  const key = wmo * 2 + (daylight ? 1 : 0);
+  let path = ANIMATIONS.get(key);
+  if (path === undefined) {
+    path = `animations/${assetFor(wmo, daylight)}.anim`;
+    ANIMATIONS.set(key, path);
+  }
+  return path;
 }

@@ -27,9 +27,21 @@ function suffixOf(suffix: Suffix): string {
   return units === "fahrenheit" ? "°F" : "°C";
 }
 
+const SUFFIX_INDEX: Record<Suffix, number> = { full: 0, degree: 1, none: 2 };
+
+/** Formatted readings, by rounded value and suffix. The same few come round again and again. */
+const FORMATTED = new Map<number, string>();
+
 /** Temperature as it is shown: converted, rounded, always signed — "+23°C", "-7°", "0". */
 export function formatTemp(celsius: number, suffix: Suffix = "full"): string {
   const rounded = Math.round(toUnits(celsius));
-  const sign = rounded > 0 ? "+" : "";
-  return `${sign}${rounded}${suffixOf(suffix)}`;
+  const key = rounded * 3 + SUFFIX_INDEX[suffix];
+
+  let text = FORMATTED.get(key);
+  if (text === undefined) {
+    const sign = rounded > 0 ? "+" : "";
+    text = `${sign}${rounded}${suffixOf(suffix)}`;
+    FORMATTED.set(key, text);
+  }
+  return text;
 }
