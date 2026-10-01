@@ -5,7 +5,7 @@ import type { Units } from "./settings.ts";
 /** The scale every reading is shown in. Set once at startup, before the first frame is drawn. */
 let units: Units = "celsius";
 
-export function setUnits(value: Units): void {
+export function setUnits(value: Units) {
   units = value;
 }
 

@@ -80,7 +80,7 @@ function keyFor(text: string, font: DeviceFont): string {
 }
 
 /** Makes a font measurable. Each map in maps/ holds one. */
-export function registerFontMaps(extra: { fonts: Record<string, unknown> }): void {
+export function registerFontMaps(extra: { fonts: Record<string, unknown> }) {
   for (const [name, raw] of Object.entries(extra.fonts)) {
     RAW[name] = raw as RawFontMap;
     delete DECODED[name];

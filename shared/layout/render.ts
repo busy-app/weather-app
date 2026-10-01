@@ -52,7 +52,7 @@ function crossOffset(free: number, align: CrossAlign): number {
 }
 
 /** Lays out the measured tree into `out`. (x, y) is the node's top-left. */
-function place(m: Measured, baseX: number, baseY: number, display: 'front' | 'back', out: Element[]): void {
+function place(m: Measured, baseX: number, baseY: number, display: 'front' | 'back', out: Element[]) {
   const node = m.node;
 
   // Applied once per node, leaf or container, and only here.

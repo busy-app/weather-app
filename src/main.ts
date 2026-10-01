@@ -58,7 +58,7 @@ function report(err: unknown) {
 }
 
 /** The graph itself is rebuilt when it is next drawn. */
-function applyWindow(): void {
+function applyWindow() {
   hours = windowOf(forecastHours, elapsed, HOURS);
   graph = undefined;
 
@@ -264,7 +264,7 @@ function drawable(): boolean {
  * Draws whichever screen is due, once the input has settled. Elements are addressed by id, so only
  * what differs is sent: a step through the graph sends the marker and the readings, never the bars.
  */
-function draw(): void {
+function draw() {
   if (stopped || !drawable()) return;
 
   if (settling !== undefined) clearTimeout(settling);
@@ -350,7 +350,7 @@ function filled(screen: Screen): boolean {
 }
 
 /** Advances to the next non-empty screen, wrapping around. The cursor restarts at the first entry. */
-function nextScreen(): void {
+function nextScreen() {
   // While loading there is no current screen; -1 starts the search at the first one.
   const from = phase.screen === "loading" ? -1 : SCREENS.indexOf(phase.screen);
 
