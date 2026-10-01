@@ -1,12 +1,3 @@
-// Screen layout: Row / Column / Stack → elements[] for DisplayDraw.
-//
-//     render(
-//       row({ justify: 'center', align: 'baseline', gap: 1 }, [
-//         { type: 'text', id: 'time', text: '12:05', font: 'bold' },
-//         { type: 'text', id: 'ampm', text: 'PM', font: 'small' },
-//       ]),
-//     )
-
 import type { ColumnNode, ContainerBase, Node, RowNode, StackNode, StackProps } from './types.ts';
 
 export type {

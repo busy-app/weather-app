@@ -1,5 +1,3 @@
-// Placement: measured tree → flat elements[] for DisplayDraw. Coordinates are absolute from the screen's top-left, and elements keep the default align.
-
 import type { DisplayElement } from '../device.ts';
 import { measure, type Measured } from './measure.ts';
 import { isContainer, resolvePadding, type CrossAlign, type MainAlign, type Node } from './types.ts';

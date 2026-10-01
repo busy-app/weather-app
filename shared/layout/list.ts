@@ -1,13 +1,3 @@
-// A scrolling list of strings, drawn straight to elements[].
-//
-//     ┌──────────────────┬─┐
-//     │          17 Sep  │ │   the selection sits in the middle,
-//     │          18 Sep  │█│   the thumb marks where it is
-//     │          19 Sep  │ │
-//     └──────────────────┴─┘
-//
-// Returns DisplayDraw elements rather than a layout tree: the geometry follows from the width, the line step and the side the scrollbar is on, so there is nothing to lay out.
-
 import type { DisplayElement } from '../device.ts';
 import { capBox, type DeviceFont } from '../font/index.ts';
 

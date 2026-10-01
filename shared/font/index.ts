@@ -1,7 +1,3 @@
-// Device font metrics: text width and vertical padding for any string.
-//
-// The maps in maps/ are generated from the firmware's .font files by tools/build-font-maps.mjs. See font-maps.d.ts for how `#font-maps` is resolved.
-
 import { MAPS } from './maps.ts';
 
 /** Fonts available in DisplayDraw. */

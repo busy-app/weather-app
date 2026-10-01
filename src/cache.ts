@@ -1,5 +1,3 @@
-// The last forecast, kept so a restart has something to draw before the network answers.
-
 import type { CurrentWeather, DayForecast, ForecastHour } from "./api.ts";
 import type { Units } from "./settings.ts";
 

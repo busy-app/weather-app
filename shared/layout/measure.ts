@@ -1,5 +1,3 @@
-// Node measurement in visible pixels. Each node carries `inkTop`, which placement subtracts from the y it emits.
-
 import { fontBaseline, textLayoutBox, textWidth } from '../font/index.ts';
 import { isContainer, resolvePadding, type Node } from './types.ts';
 

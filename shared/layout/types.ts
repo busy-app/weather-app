@@ -1,6 +1,3 @@
-// Layout tree types. The tree exists only in TS; the engine flattens it into DisplayDraw's
-// elements[]. Leaf fields are the element's own, minus x/y/align, plus sizes the engine can't measure.
-
 import type { DisplayElement } from '../device.ts';
 
 type Element = DisplayElement;

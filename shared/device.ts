@@ -1,6 +1,3 @@
-// The slice of the device HTTP API this app uses, and the element types DisplayDraw accepts.
-
-/** Fonts available in DisplayDraw. */
 export type DeviceFont =
   | "tiny"
   | "small"

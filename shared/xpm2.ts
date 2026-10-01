@@ -1,24 +1,3 @@
-// XPM2 generator for the xpmbitmap element in DisplayDraw.
-//
-// XPM2 is plain text: a signature, a header line, palette lines and pixel lines, all newline-separated. That string is what the element's `data` field takes.
-//
-//   generateXpm2({
-//     palette: { '.': 'None', '#': '#FF0000', 'O': '#00FF00' },
-//     grid: [
-//       '.#.#.',
-//       '#####',
-//       '.OOO.',
-//     ],
-//   })
-//   ! XPM2
-//   5 3 3 1
-//   . c None
-//   # c #FF0000
-//   O c #00FF00
-//   .#.#.
-//   #####
-//   .OOO.
-
 /**
  * `c` color, `g` grayscale, `g4` 4-level grayscale, `m` monochrome, `s` symbolic name. A symbol may carry several; the device picks the one matching its display.
  */
