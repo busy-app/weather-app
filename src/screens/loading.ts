@@ -6,7 +6,7 @@
 //
 // The spinner is a stock animation, played from the device's own assets rather than the app's.
 
-import { row, SCREEN, type Node } from "@busy-app/busy-lib";
+import { row, SCREEN, type Node } from "@shared/layout/index.ts";
 
 const SPINNER = { width: 8, height: 8 };
 

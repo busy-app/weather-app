@@ -8,7 +8,7 @@
 // The animation holds the left edge; everything else is text stacked beside it.
 
 import { formatDay, formatHM, formatMonth } from "@shared/datetime";
-import { column, row, SCREEN, type Node } from "@busy-app/busy-lib";
+import { column, row, SCREEN, type Node } from "@shared/layout/index.ts";
 import type { CurrentWeather } from "../api.ts";
 import { formatTemp } from "../temp.ts";
 import { animationFor } from "../wmo.ts";

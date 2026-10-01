@@ -7,7 +7,7 @@
 //
 // Everything on it describes the hour the marker stands on, not the present one.
 
-import { column, row, stack, type Node } from "@busy-app/busy-lib";
+import { column, row, stack, type Node } from "@shared/layout/index.ts";
 import type { ForecastHour } from "../api.ts";
 import { BAR_W, GRAPH_H, GRAPH_W, renderMarker, type Graph } from "../graph.ts";
 import { formatTemp } from "../temp.ts";
@@ -22,9 +22,18 @@ const WHITE = "#FFFFFFFF";
 /** The clock is dimmed: it labels the hour rather than telling the time. */
 const DIM = "#AAAAAAFF";
 
-/** "12:00" for the hour the marker sits on. */
+/** "12:00" for the hour the marker sits on; there are only 24 of them, so they are built once. */
+const hourLabels: string[] = [];
+
 function formatHour(hour: number): string {
-  return `${String(hour).padStart(2, "0")}:00`;
+  const known = hourLabels[hour];
+  if (known !== undefined) {
+    return known;
+  }
+
+  const text = `${String(hour).padStart(2, "0")}:00`;
+  hourLabels[hour] = text;
+  return text;
 }
 
 /**
@@ -44,7 +53,7 @@ export function forecastScreen(hours: ForecastHour[], graph: Graph, at: number):
       id: "xpm-graph",
       data: graph.bitmap,
       opacity: 100,
-      width: GRAPH_W,
+      width: graph.width,
       height: GRAPH_H,
     },
     {

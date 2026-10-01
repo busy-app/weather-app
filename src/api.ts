@@ -58,6 +58,9 @@ export type Forecast = {
 
 export const GRAPH_HOURS = 24;
 
+/** Hours to ask for: the graph shows GRAPH_HOURS of them and slides into the rest as they pass. */
+const HOURS_AHEAD = GRAPH_HOURS * 2;
+
 export const FORECAST_DAYS = 7;
 
 async function get<T>(path: string): Promise<T> {
@@ -96,7 +99,7 @@ export async function fetchForecast(city?: City): Promise<Forecast> {
       code: data.current.weather_code,
       daylight: data.current.is_day,
     },
-    hours: (data.hourly ?? []).slice(0, GRAPH_HOURS).map((hour) => ({
+    hours: (data.hourly ?? []).slice(0, HOURS_AHEAD).map((hour) => ({
       hour: Number(hour.time.slice(11, 13)),
       temp: hour.temperature,
       code: hour.weather_code,

@@ -1,6 +1,6 @@
 // The hourly forecast as an XPM2 bitmap: one hour per 3-pixel bar.
 
-import { generateXpm2 } from "@busy-app/busy-lib";
+import { generateXpm2 } from "@shared/xpm2.ts";
 import { tempColor } from "./tempColor.ts";
 
 export const HOURS = 24;
@@ -39,6 +39,8 @@ function heights(temps: number[]): number[] {
 export interface Graph {
   /** The bars as an XPM2 bitmap. */
   readonly bitmap: string
+  /** What the bitmap actually spans; short of GRAPH_W when the forecast runs out. */
+  readonly width: number
   /** The marker box for each hour, indexed as `temps` is. */
   readonly markers: readonly MarkerBox[]
 }
@@ -49,7 +51,6 @@ export interface MarkerBox {
   readonly height: number
 }
 
-/** Builds everything the forecast screen draws from the temperatures alone. */
 export function buildGraph(temps: number[]): Graph {
   const hours = temps.slice(0, HOURS);
   const bars = heights(hours);
@@ -60,7 +61,7 @@ export function buildGraph(temps: number[]): Graph {
     return { x: hour * BAR_W, y, height: GRAPH_H - y };
   });
 
-  return { bitmap: renderBars(hours, bars), markers };
+  return { bitmap: renderBars(hours, bars), width: hours.length * BAR_W, markers };
 }
 
 /** The bars alone; the marker is a separate element drawn over them. */

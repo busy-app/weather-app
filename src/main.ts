@@ -1,5 +1,5 @@
-import { device } from "@shared/device";
-import { render } from "@busy-app/busy-lib";
+import { displayClear, displayDraw } from "@shared/device";
+import { render } from "@shared/layout/index.ts";
 import manifest from "./appmeta/manifest.json";
 import {
   fetchForecast,
@@ -7,7 +7,9 @@ import {
   type DayForecast,
   type ForecastHour,
 } from "./api.ts";
+import { loadForecast, saveForecast } from "./cache.ts";
 import { buildGraph, HOURS, type Graph } from "./graph.ts";
+import { dropPastDays, hoursPassed, isoDate, shiftedSelection, windowOf } from "./sliding.ts";
 import { daysScreen } from "./screens/days.ts";
 import { forecastScreen } from "./screens/forecast.ts";
 import { loadingScreen } from "./screens/loading.ts";
@@ -22,45 +24,159 @@ type Phase =
   | { screen: "forecast"; hour: number }
   | { screen: "days"; day: number };
 
-/** The name the app draws under; the device clears elements by this id. */
 const APP = manifest.id;
 
-/** How often the forecast is fetched again. */
 const REFRESH_MS = 15 * 60 * 1000;
 
-/** The clock on the weather screen is repainted on the minute. */
 const MINUTE_MS = 60 * 1000;
 
 /** Added to the wait so the tick lands after the minute has rolled over, not on its edge. */
 const MINUTE_SKEW_MS = 50;
 
-/** The current conditions, the hours of the graph, and the days after them. */
+const HOUR_MS = 60 * MINUTE_MS;
+
 let weather: CurrentWeather | undefined;
+/** Every hour the forecast returned; the graph shows a window into it. */
+let forecastHours: ForecastHour[] = [];
+/** Hours since the forecast arrived: the graph's left edge. */
+let elapsed = 0;
+/** When the forecast on screen was fetched, so an hour is never dropped twice. */
+let refreshedAt = 0;
 let hours: ForecastHour[] = [];
 let days: DayForecast[] = [];
 
-let graph: Graph = { bitmap: "", markers: [] };
+/** Built on demand: only the forecast screen needs it, and it costs a full XPM2 render. */
+let graph: Graph | undefined;
 
 /** Read once at startup; a change takes effect when the app is restarted. */
 let settings: Settings = DEFAULTS;
 
-let phase: Phase = { screen: "loading", text: "Loading settings" };
+let phase: Phase = { screen: "loading", text: "Loading weather" };
 
-/** Reads the forecast. Failures leave the last good data on screen. */
-async function refresh(): Promise<void> {
+function report(err: unknown) {
+  console.error(`${APP}: ${err instanceof Error ? err.message : String(err)}`);
+}
+
+/** The graph itself is rebuilt when it is next drawn. */
+function applyWindow(): void {
+  hours = windowOf(forecastHours, elapsed, HOURS);
+  graph = undefined;
+
+  // The window is short of a full day once the forecast runs out; keep the marker inside it.
+  if (phase.screen === "forecast" && phase.hour >= hours.length) {
+    phase = { screen: "forecast", hour: Math.max(0, hours.length - 1) };
+  }
+}
+
+function shiftSelection(by: number) {
+  if (by <= 0 || phase.screen !== "forecast") return;
+
+  phase = { screen: "forecast", hour: shiftedSelection(phase.hour, by) };
+}
+
+/** A failure leaves the last good data on screen. */
+async function refresh() {
   const place = settings.location;
   const forecast = await fetchForecast(place.mode === "fixed" ? place : undefined);
 
+  const selectedDay = phase.screen === "days" ? days[phase.day]?.date : undefined;
+  const passed = hoursPassed(hours[0], forecast.hours[0]);
+
   weather = forecast.current;
   days = forecast.days;
+  saveForecast({
+    fetchedAt: Date.now(),
+    current: forecast.current,
+    hours: forecast.hours,
+    days: forecast.days,
+    view: { units: settings.units, showTime: settings.showTime, showDate: settings.showDate },
+  });
 
   // One rounding for both, so bar heights and readings agree.
-  hours = forecast.hours.slice(0, HOURS).map((hour) => ({
+  forecastHours = forecast.hours.map((hour) => ({
     ...hour,
     temp: fromUnits(Math.round(toUnits(hour.temp))),
   }));
 
-  graph = buildGraph(hours.map((hour) => hour.temp));
+  // A fresh forecast starts at the current hour again.
+  elapsed = 0;
+  refreshedAt = Date.now();
+  applyWindow();
+  shiftSelection(passed);
+  keepSelectedDay(selectedDay);
+}
+
+/** The cursor follows the date it was on, wherever that day has moved to. */
+function keepSelectedDay(date: string | undefined) {
+  if (date === undefined || phase.screen !== "days") return;
+
+  const at = days.findIndex((day) => day.date === date);
+  phase = { screen: "days", day: at >= 0 ? at : 0 };
+}
+
+/**
+ * Puts the last forecast back on screen. It is stale by definition, so the fetch that follows
+ * replaces it, but the app has something to show before the network answers.
+ */
+function restoreCached(now: number) {
+  const cached = loadForecast(now);
+  if (!cached) return false;
+
+  const passed = Math.floor((now - cached.fetchedAt) / HOUR_MS);
+  if (passed >= cached.hours.length) return false;
+
+  // Rounded in whatever scale was on screen last time; the settings confirm it in a moment.
+  settings = { ...settings, ...cached.view };
+  setUnits(settings.units);
+
+  weather = cached.current;
+  days = cached.days;
+  forecastHours = cached.hours.map((hour) => ({
+    ...hour,
+    temp: fromUnits(Math.round(toUnits(hour.temp))),
+  }));
+
+  elapsed = passed;
+  refreshedAt = cached.fetchedAt;
+  applyWindow();
+  dropDays(new Date(now));
+
+  return weather !== undefined;
+}
+
+function viewChanged(before: Settings, after: Settings) {
+  return (
+    before.units !== after.units ||
+    before.showTime !== after.showTime ||
+    before.showDate !== after.showDate
+  );
+}
+
+function dropDays(now: Date) {
+  const selected = phase.screen === "days" ? days[phase.day]?.date : undefined;
+  const result = dropPastDays(days, isoDate(now));
+  if (result.dropped === 0) return;
+
+  days = result.days;
+
+  // Only reachable after days offline.
+  if (days.length === 0) {
+    if (phase.screen === "days") phase = { screen: "weather" };
+    return;
+  }
+
+  keepSelectedDay(selected);
+}
+
+function advanceHour(now: number) {
+  // A forecast fetched this hour already starts on it.
+  if (Math.floor(refreshedAt / HOUR_MS) === Math.floor(now / HOUR_MS)) return;
+
+  if (elapsed + 1 >= forecastHours.length) return;
+
+  elapsed += 1;
+  applyWindow();
+  shiftSelection(1);
 }
 
 /** Every field a screen may change. One left out here is one that never reaches the screen again. */
@@ -82,8 +198,8 @@ const FIELDS = [
 function differs(before: Drawn | undefined, now: Drawn): boolean {
   if (!before) return true;
 
-  const was = before as Record<string, unknown>;
-  const is = now as Record<string, unknown>;
+  const was = before as unknown as Record<string, unknown>;
+  const is = now as unknown as Record<string, unknown>;
 
   for (let i = 0; i < FIELDS.length; i++) {
     const key = FIELDS[i]!;
@@ -111,8 +227,8 @@ let drawn = new Map<string, Drawn>();
 let drawing = false;
 let pending = false;
 
-/** How long the app waits for the encoder to settle. A frame costs far more than the gap between two ticks. */
-const SETTLE_MS = 60;
+/** Ticks that arrive while a frame is in flight are coalesced anyway. */
+const SETTLE_MS = 1;
 
 let settling: ReturnType<typeof setTimeout> | undefined;
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
@@ -121,6 +237,8 @@ let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let endWait: (() => void) | undefined;
 let unbindInput: BusyUnbind | undefined;
 let stopped = false;
+/** The hour the last tick ran in, to spot the roll-over. */
+let tickHour = new Date().getHours();
 
 function stop() {
   if (stopped) return;
@@ -143,14 +261,12 @@ function drawable(): boolean {
 }
 
 /**
- * Draws whichever screen is due, once the input has settled.
- *
- * Elements are addressed by id, so only what differs is sent: a step through the graph sends the marker and the readings, never the bars behind them.
+ * Draws whichever screen is due, once the input has settled. Elements are addressed by id, so only
+ * what differs is sent: a step through the graph sends the marker and the readings, never the bars.
  */
 function draw(): void {
   if (stopped || !drawable()) return;
 
-  // Each tick pushes the frame back, so a turn of the knob costs one frame rather than one per tick.
   if (settling !== undefined) clearTimeout(settling);
   settling = setTimeout(() => {
     settling = undefined;
@@ -193,6 +309,7 @@ async function paint(): Promise<void> {
       }),
     );
   } else if (phase.screen === "forecast") {
+    if (!graph) graph = buildGraph(hours.map((hour) => hour.temp));
     elements = render(forecastScreen(hours, graph, phase.hour));
   } else {
     elements = daysScreen(days, phase.day);
@@ -213,10 +330,10 @@ async function paint(): Promise<void> {
   // Both at once; neither names an element the other does, so the order they arrive in does not matter.
   const sent: Promise<unknown>[] = [];
   if (changed.length > 0) {
-    sent.push(device.DisplayDraw({ application_name: APP, priority: 50, elements: changed }));
+    sent.push(displayDraw({ application_name: APP, priority: 50, elements: changed }));
   }
   if (stale.length > 0) {
-    sent.push(device.DisplayClear({ application_name: APP, element_ids: stale }));
+    sent.push(displayClear(APP, stale));
   }
   await Promise.all(sent);
 }
@@ -284,16 +401,35 @@ function wait(ms: number): Promise<void> {
   });
 }
 
-function scheduleClock(report: (err: unknown) => void) {
-  if (stopped || !settings.showTime) return;
+/**
+ * The minute tick: repaints the clock, and on the hour moves the graph along and asks for a fresh
+ * forecast, which is also what brings a new day to the day screen at midnight.
+ */
+function scheduleClock() {
+  if (stopped) return;
 
   clockTimer = setTimeout(
     () => {
       clockTimer = undefined;
       if (stopped) return;
 
-      if (phase.screen === "weather") paintNow().catch(report);
-      scheduleClock(report);
+      const now = new Date();
+      const hourRolled = now.getHours() !== tickHour;
+      tickHour = now.getHours();
+
+      if (hourRolled) {
+        advanceHour(now.getTime());
+        dropDays(now);
+        void refresh()
+          .then(() => paintNow())
+          .catch(report);
+      }
+
+      if (hourRolled || (settings.showTime && phase.screen === "weather")) {
+        paintNow().catch(report);
+      }
+
+      scheduleClock();
     },
     MINUTE_MS - (Date.now() % MINUTE_MS) + MINUTE_SKEW_MS,
   );
@@ -304,12 +440,14 @@ function scheduleClock(report: (err: unknown) => void) {
  *
  * Without this a start with no network would sit on the spinner until the refresh interval came round a quarter of an hour later.
  */
-async function firstForecast(report: (err: unknown) => void) {
+async function firstForecast() {
   for (let attempt = 0; !stopped; attempt++) {
     try {
       await refresh();
       if (stopped) return;
-      phase = { screen: "weather" };
+
+      // Only the spinner is left behind; a screen the cache already put up stays where it is.
+      if (phase.screen === "loading") phase = { screen: "weather" };
       await paintNow();
       return;
     } catch (err) {
@@ -321,21 +459,43 @@ async function firstForecast(report: (err: unknown) => void) {
 }
 
 export default function run() {
-  const report = (err: unknown) =>
-    console.error(`${APP}: ${err instanceof Error ? err.message : String(err)}`);
+  // Startup timings, to see where the wait before the first screen goes.
+  const startedAt = Date.now();
+  const mark = (what: string) => console.log(`${APP}: ${what} +${Date.now() - startedAt}ms`);
 
-  // The settings decide which place is asked for and in which scale the readings are drawn, so they come before the first forecast. loadSettings() handles its own failures.
+  mark("script evaluated");
+
   void (async () => {
     void paintNow();
 
+    // The cache carries the scale it was drawn in, so this frame waits for neither the settings nor the network.
+    const restored = restoreCached(Date.now());
+    if (restored) {
+      phase = { screen: "weather" };
+      void paintNow();
+      mark("cached forecast on screen");
+    }
+
+    const stored = settings;
     settings = await loadSettings();
     setUnits(settings.units);
+    mark("settings read");
 
-    phase = { screen: "loading", text: "Loading weather" };
-    void paintNow();
+    // Settings changed since that frame: redraw it in the right scale.
+    if (restored && viewChanged(stored, settings)) {
+      forecastHours = forecastHours.map((hour) => ({
+        ...hour,
+        temp: fromUnits(Math.round(toUnits(hour.temp))),
+      }));
+      applyWindow();
+      void paintNow();
+    }
 
-    await firstForecast(report);
+    if (!restored) mark("no usable cache, waiting on the network");
+
+    await firstForecast();
     if (stopped) return;
+    mark("forecast fetched");
 
     // Started only once the settings are in hand, so no refresh runs against the wrong place.
     refreshTimer = setInterval(() => {
@@ -344,7 +504,7 @@ export default function run() {
         .catch(report);
     }, REFRESH_MS);
 
-    scheduleClock(report);
+    scheduleClock();
   })();
 
   unbindInput = listen("input", (event) => {
