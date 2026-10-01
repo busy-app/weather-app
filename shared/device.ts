@@ -112,63 +112,58 @@ async function call(path: string, init: RequestInit = {}) {
   return res;
 }
 
-const TYPES = ["text", "image", "animation", "rectangle", "xpmbitmap"] as const;
+/** Requests sent but not answered yet. */
+let inFlight = 0;
 
-/** "text:3 image:2" — the element types in a request. */
-function summarize(elements: DisplayElement[]): string {
-  let out = "";
-  for (const type of TYPES) {
-    let count = 0;
-    for (const element of elements) if (element.type === type) count++;
-    if (count > 0) out += `${out === "" ? "" : " "}${type}:${count}`;
-  }
-  return out;
+/** Run after every request settles, so the app can send what it held back. */
+let onSettled: (() => void) | undefined;
+
+/** Sets the callback run whenever a request settles. */
+export function whenSettled(fn: () => void): void {
+  onSettled = fn;
 }
 
-function elapsed(started: number): number {
-  return Date.now() - started;
+/** How many requests are waiting for the device to answer. */
+export function outstanding(): number {
+  return inFlight;
 }
 
 /**
- * Draws elements. Only what changed since the last frame should be sent.
+ * Hands a request to the device without waiting for the reply.
  *
- * Logs the element types in the request and how long the device took to accept it, which is
- * what makes a slow frame visible in the device console.
+ * The device takes far longer to answer than a frame takes to build, so the app does not sit on
+ * it: it hands the body over and returns. `outstanding` lets the app keep only as much in flight
+ * as the device can actually work through.
  */
-export async function displayDraw(request: DrawRequest): Promise<void> {
-  const before = Date.now();
-  const body = JSON.stringify(request);
-  const serialized = Date.now() - before;
-  const started = Date.now();
+function send(app: string, label: string, method: string, body: string): void {
+  const settled = (error: string | undefined) => {
+    inFlight--;
+    if (error !== undefined) console.error(`${app}: ${label} failed: ${error}`);
+    if (onSettled !== undefined) onSettled();
+  };
 
-  try {
-    await call("/display/draw", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body,
-    });
-  } finally {
-    console.log(
-      `${request.application_name}: draw ${request.elements.length} [${summarize(request.elements)}] ` +
-        `${body.length}B stringify ${serialized}ms request ${elapsed(started)}ms`,
-    );
-  }
+  fetch(`${API}/display/draw`, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body,
+  }).then(
+    (res) => settled(res.ok ? undefined : `HTTP ${res.status}`),
+    (err) => settled(err instanceof Error ? err.message : String(err)),
+  );
+}
+
+/** Draws elements. Only what changed since the last frame should be sent. */
+export function displayDraw(request: DrawRequest): void {
+  const body = JSON.stringify(request);
+  inFlight++;
+  send(request.application_name, "draw", "POST", body);
 }
 
 /** Removes elements by id. */
-export async function displayClear(request: ClearRequest): Promise<void> {
-  const ids = request.element_ids ?? [];
-  const started = Date.now();
-
-  try {
-    await call("/display/draw", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
-    });
-  } finally {
-    console.log(`${request.application_name ?? "?"}: clear ${ids.length} in ${elapsed(started)}ms`);
-  }
+export function displayClear(request: ClearRequest): void {
+  const body = JSON.stringify(request);
+  inFlight++;
+  send(request.application_name ?? "?", "clear", "DELETE", body);
 }
 
 export async function getAppSettings(appId: string): Promise<AppSettingsDocument> {

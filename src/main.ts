@@ -1,4 +1,4 @@
-import { displayClear, displayDraw } from "@shared/device";
+import { displayClear, displayDraw, outstanding, whenSettled } from "@shared/device";
 import manifest from "./appmeta/manifest.json";
 import {
   fetchForecast,
@@ -65,28 +65,8 @@ async function refresh(): Promise<void> {
 /** The elements on screen, kept between frames so only what moved is rebuilt and sent. */
 const frame = new Frame();
 
-/** The requests of the frame in flight; reused so that a frame does not allocate it. */
-const sends: Promise<unknown>[] = [];
-
-/** A draw is in flight; a request made while it runs is coalesced into one frame after it. */
-let drawing = false;
-let pending = false;
-
-/** Inputs seen since the last frame was sent; they all wait for the one draw. */
-let inputs = 0;
-
-/** When the first of those inputs arrived, for the end-to-end latency. */
-let inputsAt = 0;
-
-/** How long the last frame spent building and diffing its elements, and then on the wire. */
-let prepareMs = 0;
-let requestMs = 0;
-
-/** Records an input that changes the frame, so the draw it causes can be measured. */
-function noteInput(): void {
-  if (inputs === 0) inputsAt = Date.now();
-  inputs++;
-}
+/** A frame was asked for while the device still had one; it goes out when the device answers. */
+let held = false;
 
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 let clockTimer: ReturnType<typeof setTimeout> | undefined;
@@ -99,6 +79,7 @@ function stop() {
   if (stopped) return;
 
   stopped = true;
+  held = false;
 
   if (refreshTimer !== undefined) clearInterval(refreshTimer);
   if (clockTimer !== undefined) clearTimeout(clockTimer);
@@ -115,49 +96,23 @@ function drawable(): boolean {
 }
 
 /**
- * Draws whichever screen is due.
+ * Draws whichever screen is due and sends it, without waiting for the device to answer.
  *
- * Elements are addressed by id, so only what differs is sent: a step through the graph sends the pin and the readings, never the bars behind them.
+ * Elements are addressed by id, so only what differs is sent: a step through the graph sends the
+ * pin and the readings, never the bars behind them. Nothing blocks on the request: when one is
+ * still outstanding the frame is held, and the newest state goes out as soon as the device is
+ * free — so a fast spin skips intermediate positions instead of queueing them up.
  */
-async function paintNow(): Promise<void> {
+function paintNow(): void {
   if (stopped || !drawable()) return;
 
-  // A frame is already in flight; it will pick the new position up when it ends.
-  if (drawing) {
-    pending = true;
+  // The device works through one request at a time, so queueing more only makes every frame later.
+  // Hold the newest frame until it answers, then send that one and skip everything in between.
+  if (outstanding() > 0) {
+    held = true;
     return;
   }
-  drawing = true;
-
-  try {
-    do {
-      pending = false;
-
-      // Take the inputs this frame answers and start a fresh window for any that arrive while it runs.
-      const settled = inputs;
-      const since = inputsAt;
-      inputs = 0;
-      inputsAt = 0;
-
-      const started = Date.now();
-      await paint();
-
-      if (settled > 0) {
-        const done = Date.now();
-        console.log(
-          `${APP}: input ${settled} -> ${done - since}ms ` +
-            `(wait ${started - since}, prepare ${prepareMs}, request ${requestMs})`,
-        );
-      }
-    } while (pending && !stopped);
-  } finally {
-    drawing = false;
-  }
-}
-
-/** Sends one frame: what changed, then what is no longer on it. */
-async function paint(): Promise<void> {
-  const began = Date.now();
+  held = false;
 
   frame.begin();
 
@@ -175,19 +130,14 @@ async function paint(): Promise<void> {
   }
 
   frame.end();
-  prepareMs = Date.now() - began;
 
   // Both at once; neither names an element the other does, so the order they arrive in does not matter.
-  sends.length = 0;
   if (frame.changed.length > 0) {
-    sends.push(displayDraw({ application_name: APP, priority: 50, elements: frame.changed }));
+    displayDraw({ application_name: APP, priority: 50, elements: frame.changed });
   }
   if (frame.stale.length > 0) {
-    sends.push(displayClear({ application_name: APP, element_ids: frame.stale }));
+    displayClear({ application_name: APP, element_ids: frame.stale });
   }
-  await Promise.all(sends);
-
-  requestMs = Date.now() - began - prepareMs;
 }
 
 /** The screens in the order the ok and start keys cycle through them. `loading` is not among them: it is left behind for good once the forecast arrives. */
@@ -261,7 +211,7 @@ function scheduleClock(report: (err: unknown) => void) {
       clockTimer = undefined;
       if (stopped) return;
 
-      if (phase.screen === "weather") paintNow().catch(report);
+      if (phase.screen === "weather") paintNow();
       scheduleClock(report);
     },
     MINUTE_MS - (Date.now() % MINUTE_MS) + MINUTE_SKEW_MS,
@@ -279,7 +229,7 @@ async function firstForecast(report: (err: unknown) => void) {
       await refresh();
       if (stopped) return;
       phase = { screen: "weather" };
-      await paintNow();
+      paintNow();
       return;
     } catch (err) {
       report(err);
@@ -293,15 +243,20 @@ export default function run() {
   const report = (err: unknown) =>
     console.error(`${APP}: ${err instanceof Error ? err.message : String(err)}`);
 
+  // The frame that was held back goes out the moment the device answers the one it had.
+  whenSettled(() => {
+    if (held && !stopped) paintNow();
+  });
+
   // The settings decide which place is asked for and in which scale the readings are drawn, so they come before the first forecast. loadSettings() handles its own failures.
   void (async () => {
-    void paintNow();
+    paintNow();
 
     settings = await loadSettings();
     setUnits(settings.units);
 
     phase = { screen: "loading", text: "Loading weather" };
-    void paintNow();
+    paintNow();
 
     await firstForecast(report);
     if (stopped) return;
@@ -321,8 +276,7 @@ export default function run() {
 
     if (event.key === "encoder") {
       if (!scroll(event.delta)) return;
-      noteInput();
-      void paintNow().catch(report);
+      paintNow();
       return;
     }
 
@@ -333,8 +287,7 @@ export default function run() {
       return;
     }
 
-    noteInput();
     nextScreen();
-    void paintNow().catch(report);
+    paintNow();
   });
 }
