@@ -8,8 +8,10 @@
 // The animation holds the left edge; everything else is text stacked beside it.
 
 import { formatDay, formatHM, formatMonth } from "@shared/datetime";
-import { column, row, SCREEN, type Node } from "@busy-app/busy-lib";
 import type { CurrentWeather } from "../api.ts";
+import type { Frame } from "../frame.ts";
+import { textBox } from "../font.ts";
+import { center, SCREEN } from "../screen.ts";
 import { formatTemp } from "../temp.ts";
 import { animationFor } from "../wmo.ts";
 
@@ -24,6 +26,9 @@ const DIM = "#AAAAAAFF";
 const TEMP_DY = 1;
 /** Lifts the descenders of "p" and "," back onto the screen. */
 const SUB_DY = -2;
+
+/** Where the text column starts: the animation's width and the gap after it. */
+const TEXT_X = ANIMATION.width + GAP;
 
 /** What the line under the temperature carries, as the settings ask for it. */
 export type SubLine = {
@@ -41,44 +46,23 @@ function subLine(now: Date, show: SubLine): string {
 }
 
 /** The frame: the condition on the left, the reading and the clock beside it. */
-export function weatherScreen(weather: CurrentWeather, now: Date, show: SubLine): Node {
+export function weatherScreen(frame: Frame, weather: CurrentWeather, now: Date, show: SubLine): void {
+  const temp = formatTemp(weather.temp);
   const sub = subLine(now, show);
 
-  const temp: Node = {
-    type: "text",
-    id: "text-temp",
-    text: formatTemp(weather.temp),
-    font: "bold",
-    color: WHITE,
-    dy: TEMP_DY,
-  };
+  const tempBox = textBox(temp, "bold");
 
   // Two lines take the full height, one against each edge; the reading left alone centres itself against the animation instead.
-  const beside: Node =
+  const tempY =
     sub === ""
-      ? temp
-      : column({ justify: "between", height: SCREEN.height }, [
-          temp,
-          {
-            type: "text",
-            id: "text-sub",
-            text: sub,
-            font: "small",
-            color: DIM,
-            dy: SUB_DY,
-          },
-        ]);
+      ? center(tempBox.height, SCREEN.height) + TEMP_DY - tempBox.top
+      : TEMP_DY - tempBox.top;
 
-  return row({ align: "center", gap: GAP, height: SCREEN.height }, [
-    {
-      type: "animation",
-      id: "anim",
-      path: `animations/${animationFor(weather.code, weather.daylight)}`,
-      loop: true,
-      await_previous_end: false,
-      opacity: 100,
-      ...ANIMATION,
-    },
-    beside,
-  ]);
+  frame.animation("anim", animationFor(weather.code, weather.daylight), 0, 0);
+  frame.text("text-temp", temp, "bold", WHITE, TEXT_X, tempY);
+
+  if (sub !== "") {
+    const box = textBox(sub, "small");
+    frame.text("text-sub", sub, "small", DIM, TEXT_X, SCREEN.height - box.height + SUB_DY - box.top);
+  }
 }

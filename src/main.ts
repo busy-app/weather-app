@@ -1,5 +1,4 @@
-import { device } from "@shared/device";
-import { render } from "@busy-app/busy-lib";
+import { displayClear, displayDraw, outstanding, whenSettled } from "@shared/device";
 import manifest from "./appmeta/manifest.json";
 import {
   fetchForecast,
@@ -14,7 +13,7 @@ import { loadingScreen } from "./screens/loading.ts";
 import { weatherScreen } from "./screens/weather.ts";
 import { DEFAULTS, loadSettings, type Settings } from "./settings.ts";
 import { fromUnits, setUnits, toUnits } from "./temp.ts";
-import type { Drawn } from "./types.ts";
+import { Frame } from "./frame.ts";
 
 type Phase =
   | { screen: "loading"; text: string }
@@ -30,16 +29,21 @@ const REFRESH_MS = 15 * 60 * 1000;
 
 /** The clock on the weather screen is repainted on the minute. */
 const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
 
 /** Added to the wait so the tick lands after the minute has rolled over, not on its edge. */
 const MINUTE_SKEW_MS = 50;
 
 /** The current conditions, the hours of the graph, and the days after them. */
 let weather: CurrentWeather | undefined;
+let forecastHours: ForecastHour[] = [];
 let hours: ForecastHour[] = [];
 let days: DayForecast[] = [];
+let utcOffsetMs = 0;
+let localDay = 0;
 
-let graph: Graph = { bitmap: "", markers: [] };
+let graph: Graph = { bitmap: "", pins: [] };
 
 /** Read once at startup; a change takes effect when the app is restarted. */
 let settings: Settings = DEFAULTS;
@@ -50,71 +54,70 @@ let phase: Phase = { screen: "loading", text: "Loading settings" };
 async function refresh(): Promise<void> {
   const place = settings.location;
   const forecast = await fetchForecast(place.mode === "fixed" ? place : undefined);
+  const selectedDate = phase.screen === "days" ? days[phase.day]?.date : undefined;
+  const now = Date.now();
 
   weather = forecast.current;
   days = forecast.days;
+  utcOffsetMs = forecast.utcOffsetSeconds * 1000;
+  forecastHours = forecast.hours;
+
+  updateHours(now);
+  updateDays(now, selectedDate);
+}
+
+function localDayOf(now: number) {
+  return Math.floor((now + utcOffsetMs) / DAY_MS);
+}
+
+function updateDays(now: number, selectedDate: string | undefined) {
+  localDay = localDayOf(now);
+  const today = new Date(localDay * DAY_MS).toISOString().slice(0, 10);
+
+  let first = 0;
+  while (first < days.length && days[first]!.date < today) {
+    first++;
+  }
+
+  if (first > 0) {
+    days = days.slice(first);
+  }
+
+  if (phase.screen === "days") {
+    phase = days.length > 0
+      ? { screen: "days", day: Math.max(0, days.findIndex((day) => day.date === selectedDate)) }
+      : { screen: "weather" };
+  }
+}
+
+function updateHours(now: number) {
+  const selectedTime = phase.screen === "forecast" ? hours[phase.hour]?.time : undefined;
+
+  let first = 0;
+  while (first < forecastHours.length && forecastHours[first]!.time + HOUR_MS <= now) {
+    first++;
+  }
 
   // One rounding for both, so bar heights and readings agree.
-  hours = forecast.hours.slice(0, HOURS).map((hour) => ({
+  hours = forecastHours.slice(first, first + HOURS).map((hour) => ({
     ...hour,
     temp: fromUnits(Math.round(toUnits(hour.temp))),
   }));
 
-  graph = buildGraph(hours.map((hour) => hour.temp));
-}
-
-/** Every field a screen may change. One left out here is one that never reaches the screen again. */
-const FIELDS = [
-  "text",
-  "path",
-  "data",
-  "x",
-  "y",
-  "width",
-  "height",
-  "color",
-  "font",
-  "opacity",
-  "z_index",
-  "fill_colors",
-] as const;
-
-function differs(before: Drawn | undefined, now: Drawn): boolean {
-  if (!before) return true;
-
-  const was = before as Record<string, unknown>;
-  const is = now as Record<string, unknown>;
-
-  for (let i = 0; i < FIELDS.length; i++) {
-    const key = FIELDS[i]!;
-    const a = was[key];
-    const b = is[key];
-    if (a === b) continue;
-
-    // Only `fill_colors` is an array, and only ever a short one.
-    if (Array.isArray(a) && Array.isArray(b)) {
-      if (a.length !== b.length) return true;
-      for (let j = 0; j < a.length; j++) if (a[j] !== b[j]) return true;
-      continue;
-    }
-
-    return true;
+  graph = hours.length > 0 ? buildGraph(hours.map((hour) => hour.temp)) : { bitmap: "", pins: [] };
+  if (phase.screen === "forecast") {
+    phase = hours.length > 0
+      ? { screen: "forecast", hour: Math.max(0, hours.findIndex((hour) => hour.time === selectedTime)) }
+      : { screen: "weather" };
   }
-
-  return false;
 }
 
-/** What is on screen right now, by id, as it was last sent. */
-let drawn = new Map<string, Drawn>();
+/** The elements on screen, kept between frames so only what moved is rebuilt and sent. */
+const frame = new Frame();
 
-/** A draw is in flight; a request made while it runs is coalesced into one frame after it. */
-let drawing = false;
-let pending = false;
+/** A frame was asked for while the device still had one; it goes out when the device answers. */
+let held = false;
 
-/** How long the app waits for the encoder to settle. A frame costs far more than the gap between two ticks. */
-const SETTLE_MS = 60;
-
-let settling: ReturnType<typeof setTimeout> | undefined;
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 let clockTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -126,10 +129,10 @@ function stop() {
   if (stopped) return;
 
   stopped = true;
+  held = false;
 
   if (refreshTimer !== undefined) clearInterval(refreshTimer);
   if (clockTimer !== undefined) clearTimeout(clockTimer);
-  if (settling !== undefined) clearTimeout(settling);
   if (retryTimer !== undefined) clearTimeout(retryTimer);
 
   endWait?.();
@@ -143,82 +146,48 @@ function drawable(): boolean {
 }
 
 /**
- * Draws whichever screen is due, once the input has settled.
+ * Draws whichever screen is due and sends it, without waiting for the device to answer.
  *
- * Elements are addressed by id, so only what differs is sent: a step through the graph sends the marker and the readings, never the bars behind them.
+ * Elements are addressed by id, so only what differs is sent: a step through the graph sends the
+ * pin and the readings, never the bars behind them. Nothing blocks on the request: when one is
+ * still outstanding the frame is held, and the newest state goes out as soon as the device is
+ * free — so a fast spin skips intermediate positions instead of queueing them up.
  */
-function draw(): void {
+function paintNow(): void {
   if (stopped || !drawable()) return;
 
-  // Each tick pushes the frame back, so a turn of the knob costs one frame rather than one per tick.
-  if (settling !== undefined) clearTimeout(settling);
-  settling = setTimeout(() => {
-    settling = undefined;
-    void paintNow();
-  }, SETTLE_MS);
-}
-
-async function paintNow(): Promise<void> {
-  if (stopped || !drawable()) return;
-
-  // A frame is already in flight; it will pick the new position up when it ends.
-  if (drawing) {
-    pending = true;
+  // The device works through one request at a time, so queueing more only makes every frame later.
+  // Hold the newest frame until it answers, then send that one and skip everything in between.
+  if (outstanding() > 0) {
+    held = true;
     return;
   }
-  drawing = true;
+  held = false;
 
-  try {
-    do {
-      pending = false;
-      await paint();
-    } while (pending && !stopped);
-  } finally {
-    drawing = false;
-  }
-}
-
-/** Sends one frame: what changed, then what is no longer on it. */
-async function paint(): Promise<void> {
-  // The day screen places itself; the others still go through the layout engine.
-  let elements: Drawn[];
+  frame.begin();
 
   if (phase.screen === "loading") {
-    elements = render(loadingScreen(phase.text));
+    loadingScreen(frame, phase.text);
   } else if (phase.screen === "weather") {
-    elements = render(
-      weatherScreen(weather!, new Date(), {
-        time: settings.showTime,
-        date: settings.showDate,
-      }),
-    );
+    weatherScreen(frame, weather!, new Date(), {
+      time: settings.showTime,
+      date: settings.showDate,
+    });
   } else if (phase.screen === "forecast") {
-    elements = render(forecastScreen(hours, graph, phase.hour));
+    forecastScreen(frame, hours, graph, phase.hour);
   } else {
-    elements = daysScreen(days, phase.day);
+    daysScreen(frame, days, phase.day);
   }
 
-  const next = new Map<string, Drawn>();
-  const changed: typeof elements = [];
-  for (const element of elements) {
-    next.set(element.id, element);
-    if (differs(drawn.get(element.id), element)) changed.push(element);
-  }
-
-  const stale: string[] = [];
-  for (const id of drawn.keys()) if (!next.has(id)) stale.push(id);
-
-  drawn = next;
+  frame.end();
 
   // Both at once; neither names an element the other does, so the order they arrive in does not matter.
-  const sent: Promise<unknown>[] = [];
-  if (changed.length > 0) {
-    sent.push(device.DisplayDraw({ application_name: APP, priority: 50, elements: changed }));
+  if (frame.changed.length > 0) {
+    displayDraw({ application_name: APP, priority: 50, elements: frame.changed });
   }
-  if (stale.length > 0) {
-    sent.push(device.DisplayClear({ application_name: APP, element_ids: stale }));
+  if (frame.stale.length > 0) {
+    displayClear({ application_name: APP, element_ids: frame.stale });
   }
-  await Promise.all(sent);
 }
 
 /** The screens in the order the ok and start keys cycle through them. `loading` is not among them: it is left behind for good once the forecast arrives. */
@@ -284,16 +253,33 @@ function wait(ms: number): Promise<void> {
   });
 }
 
-function scheduleClock(report: (err: unknown) => void) {
-  if (stopped || !settings.showTime) return;
+function scheduleClock() {
+  if (stopped) {
+    return;
+  }
 
   clockTimer = setTimeout(
     () => {
       clockTimer = undefined;
       if (stopped) return;
 
-      if (phase.screen === "weather") paintNow().catch(report);
-      scheduleClock(report);
+      const now = Date.now();
+      const dayChanged = localDayOf(now) !== localDay;
+
+      const redrawForDay = dayChanged && (phase.screen === "days" || phase.screen === "weather");
+
+      if (dayChanged) {
+        updateDays(now, phase.screen === "days" ? days[phase.day]?.date : undefined);
+      }
+
+      if (hours.length > 0 && hours[0]!.time + HOUR_MS <= now) {
+        updateHours(now);
+        paintNow();
+      } else if (redrawForDay || (settings.showTime && phase.screen === "weather")) {
+        paintNow();
+      }
+
+      scheduleClock();
     },
     MINUTE_MS - (Date.now() % MINUTE_MS) + MINUTE_SKEW_MS,
   );
@@ -310,7 +296,7 @@ async function firstForecast(report: (err: unknown) => void) {
       await refresh();
       if (stopped) return;
       phase = { screen: "weather" };
-      await paintNow();
+      paintNow();
       return;
     } catch (err) {
       report(err);
@@ -324,15 +310,20 @@ export default function run() {
   const report = (err: unknown) =>
     console.error(`${APP}: ${err instanceof Error ? err.message : String(err)}`);
 
+  // The frame that was held back goes out the moment the device answers the one it had.
+  whenSettled(() => {
+    if (held && !stopped) paintNow();
+  });
+
   // The settings decide which place is asked for and in which scale the readings are drawn, so they come before the first forecast. loadSettings() handles its own failures.
   void (async () => {
-    void paintNow();
+    paintNow();
 
     settings = await loadSettings();
     setUnits(settings.units);
 
     phase = { screen: "loading", text: "Loading weather" };
-    void paintNow();
+    paintNow();
 
     await firstForecast(report);
     if (stopped) return;
@@ -344,7 +335,7 @@ export default function run() {
         .catch(report);
     }, REFRESH_MS);
 
-    scheduleClock(report);
+    scheduleClock();
   })();
 
   unbindInput = listen("input", (event) => {
@@ -352,7 +343,7 @@ export default function run() {
 
     if (event.key === "encoder") {
       if (!scroll(event.delta)) return;
-      draw();
+      paintNow();
       return;
     }
 
@@ -364,6 +355,6 @@ export default function run() {
     }
 
     nextScreen();
-    void paintNow().catch(report);
+    paintNow();
   });
 }

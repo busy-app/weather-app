@@ -7,7 +7,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -b",
-    "build": "busy-cli build"
+    "build": "busy-cli build",
+    "build/tgz": "busy-cli build --tgz"
   },
   "engines": {
     "node": ">=24 <26"
@@ -17,8 +18,5 @@
     "@busy-app/cli": "^0.2.0",
     "typescript": "~7.0.2",
     "vite": "8.1.4"
-  },
-  "dependencies": {
-    "@busy-app/busy-lib": "^0.21.1"
   }
 }

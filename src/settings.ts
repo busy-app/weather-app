@@ -1,6 +1,6 @@
 // The settings described by appmeta/settings.json, read once at startup: a change takes effect when the app is restarted.
 
-import { device } from "@shared/device";
+import { getAppSettings } from "@shared/device";
 import manifest from "./appmeta/manifest.json";
 
 /** Must match "version" in appmeta/settings.json. */
@@ -60,7 +60,7 @@ function readLocation(values: Record<string, unknown>): Location {
 /** Reads the settings document. A failure or a version mismatch falls back to the defaults, so the app still draws. */
 export async function loadSettings(): Promise<Settings> {
   try {
-    const { version, values } = await device.AppsSettingsGet({ app_id: manifest.id });
+    const { version, values } = await getAppSettings(manifest.id);
 
     if (version !== VERSION) {
       console.warn(`${manifest.id}: settings version ${version} != ${VERSION}, using defaults`);

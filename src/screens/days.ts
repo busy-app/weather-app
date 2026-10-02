@@ -6,9 +6,11 @@
 //   └────────────────────────┘
 
 import { formatDay, formatMonth } from "@shared/datetime";
-import { column, list, render, row, SCREEN, stack, type Node } from "@busy-app/busy-lib";
 import type { DayForecast } from "../api.ts";
-import type { Drawn } from "../types.ts";
+import type { Frame } from "../frame.ts";
+import { textBox } from "../font.ts";
+import { createList } from "../list.ts";
+import { center, SCREEN } from "../screen.ts";
 import { formatTemp } from "../temp.ts";
 import { iconFor } from "../wmo.ts";
 
@@ -30,15 +32,20 @@ const PANEL_COLOR = "#0A1A4AFF";
 const PANEL_Z = 10;
 const CONTENT_Z = 50;
 
-
 const WHITE = "#FFFFFFFF";
 const DIM = "#808080FF";
 
-const TOP_DY = 0;
-const BOTTOM_DY = 0;
+/** The height of one half-row; the icon sets it. */
+const ROW_H = ICON.height;
+
+/** The second half-row starts here, against the bottom of the screen. */
+const NIGHT_Y = SCREEN.height - ROW_H;
+
+/** The icon and reading sit after the label. */
+const ICON_X = LABEL_W + GAP;
+const TEMP_X = ICON_X + ICON.width + GAP;
 
 const LIST_W = SCREEN.width - PANEL_W - 1;
-const LIST_H = SCREEN.height;
 
 /** Clear space between the dates and the scrollbar. */
 const DATE_GAP = 2;
@@ -61,105 +68,87 @@ function formatDate(date: string): string {
   return text;
 }
 
+interface Slot {
+  label: string;
+  icon: string;
+  temp: string;
+}
+
+/** Ids shared with the other screens, so moving between them redraws an element instead of replacing it. */
+const DAY_SLOT: Slot = { label: "text-a", icon: "image-icon", temp: "text-temp" };
+const NIGHT_SLOT: Slot = { label: "text-b", icon: "image-icon2", temp: "text-sub" };
+
+const dateList = createList({
+  id: "list",
+  x: PANEL_W + 1,
+  y: 0,
+  width: LIST_W,
+  height: SCREEN.height,
+  font: "small",
+  gap: DATE_GAP,
+  color: DIM,
+  activeColor: WHITE,
+  scrollbar: "right",
+  trackColor: TRACK_COLOR,
+  thumbColor: THUMB_COLOR,
+  scrollbarGap: 1,
+  scrollbarWidth: BAR_W,
+  z_index: CONTENT_Z,
+});
+
+/** The labels for the forecast on show; rebuilt only when a new forecast arrives. */
+let labelled: DayForecast[] | undefined;
+let labels: string[] = [];
+
 /**
  * One half of the day: its name, its condition and its mean temperature.
  *
- * @param slot - Which element ids this half draws under. See DAY_SLOT.
+ * @param slot - Which element ids this half draws under.
+ * @param y - Where the half-row starts.
  */
 function half(
-  slot: { label: string; icon: string; temp: string },
+  frame: Frame,
+  slot: Slot,
   label: string,
   color: string,
   code: number,
   temp: number,
-  dy: number,
+  y: number,
   daylight: boolean,
-): Node {
-  return row({ align: "center", gap: GAP }, [
-    row({ width: LABEL_W }, [
-      {
-        type: "text",
-        id: slot.label,
-        text: label,
-        font: "small",
-        color,
-        dy,
-        z_index: CONTENT_Z,
-      },
-    ]),
-    {
-      type: "image",
-      id: slot.icon,
-      path: `images/${iconFor(code, daylight)}`,
-      opacity: 100,
-      dy,
-      z_index: CONTENT_Z,
-      ...ICON,
-    },
-    {
-      type: "text",
-      id: slot.temp,
-      text: formatTemp(temp, "none"),
-      font: "small",
-      color: WHITE,
-      dy,
-      z_index: CONTENT_Z,
-    },
-  ]);
-}
+): void {
+  const labelBox = textBox(label, "small");
+  const reading = formatTemp(temp, "none");
+  const readingBox = textBox(reading, "small");
 
-/** Ids shared with the other screens, so moving between them redraws an element instead of replacing it. */
-const DAY_SLOT = { label: "text-a", icon: "image-icon", temp: "text-temp" };
-const NIGHT_SLOT = { label: "text-b", icon: "image-icon2", temp: "text-sub" };
-
-/** The panel beside the dates: the labels, conditions and readings for the day on show. */
-function panel(current: DayForecast): Node {
-  return stack({}, [
-    {
-      type: "rectangle",
-      id: "rect-panel",
-      width: PANEL_W,
-      height: SCREEN.height,
-      // Without these a rectangle is a white outline and nothing else.
-      fill: "solid",
-      fill_colors: [PANEL_COLOR],
-      border_width: 0,
-      z_index: PANEL_Z,
-    },
-    column({ justify: "between", width: PANEL_W, height: SCREEN.height }, [
-      half(DAY_SLOT, "DAY", DAY_COLOR, current.dayCode, current.day, TOP_DY, true),
-      half(NIGHT_SLOT, "NIGHT", NIGHT_COLOR, current.nightCode, current.night, BOTTOM_DY, false),
-    ]),
-  ]);
+  frame.text(slot.label, label, "small", color, 0, y + center(labelBox.height, ROW_H) - labelBox.top, CONTENT_Z);
+  frame.image(slot.icon, iconFor(code, daylight), ICON_X, y, CONTENT_Z);
+  frame.text(
+    slot.temp,
+    reading,
+    "small",
+    WHITE,
+    TEMP_X,
+    y + center(readingBox.height, ROW_H) - readingBox.top,
+    CONTENT_Z,
+  );
 }
 
 /**
- * The frame. Only the panel goes through the layout engine; `list` places the dates itself.
+ * The frame.
  *
  * @param days every day of the forecast
  * @param at index of the day on show
  */
-export function daysScreen(days: DayForecast[], at: number): Drawn[] {
-  const labels = days.map((day) => formatDate(day.date));
+export function daysScreen(frame: Frame, days: DayForecast[], at: number): void {
+  if (labelled !== days) {
+    labels = days.map((day) => formatDate(day.date));
+    labelled = days;
+  }
 
-  return [
-    ...render(panel(days[at])),
-    ...list({
-      id: "list",
-      items: labels,
-      selected: at,
-      x: PANEL_W + 1,
-      y: 0,
-      width: LIST_W,
-      height: LIST_H,
-      font: "small",
-      gap: DATE_GAP,
-      style: { color: DIM, activeColor: WHITE },
-      scrollbar: "right",
-      scrollbarStyle: { trackColor: TRACK_COLOR, thumbColor: THUMB_COLOR },
-      scrollbarGap: 1,
-      scrollbarWidth: BAR_W,
-      z_index: CONTENT_Z,
-    }),
-  ];
+  const current = days[at]!;
+
+  frame.rectangle("rect-panel", 0, 0, PANEL_W, SCREEN.height, PANEL_COLOR, PANEL_Z);
+  half(frame, DAY_SLOT, "DAY", DAY_COLOR, current.dayCode, current.day, 0, true);
+  half(frame, NIGHT_SLOT, "NIGHT", NIGHT_COLOR, current.nightCode, current.night, NIGHT_Y, false);
+  dateList.draw(frame, labels, at);
 }
