@@ -5,6 +5,7 @@ import type {
   LocationsResponse,
   WeatherCode,
 } from "./apiTypes.ts";
+import { HOURS } from "./graph.ts";
 
 const BASE = (import.meta.env.VITE_WEATHER_API ?? "").replace(/\/+$/, "");
 
@@ -27,6 +28,8 @@ export type CurrentWeather = {
 };
 
 export type ForecastHour = {
+  /** Unix milliseconds, independent of the device timezone. */
+  time: number;
   /** Local hour of the day, 0..23. */
   hour: number;
   temp: number;
@@ -51,12 +54,14 @@ export type Place = {
 
 export type Forecast = {
   place: Place;
+  utcOffsetSeconds: number;
   current: CurrentWeather;
   hours: ForecastHour[];
   days: DayForecast[];
 };
 
-export const GRAPH_HOURS = 24;
+/** A day of graph plus a day of slack, so the window can slide on between refreshes. */
+const HOURS_AHEAD = HOURS * 2;
 
 export const FORECAST_DAYS = 7;
 
@@ -84,7 +89,10 @@ export async function fetchForecast(city?: City): Promise<Forecast> {
     throw new Error("weather api: no current in response");
   }
 
+  const utcOffsetSeconds = data.location.utc_offset_seconds ?? 0;
+
   return {
+    utcOffsetSeconds,
     place: {
       name: data.location.name ?? "",
       timezone: data.location.timezone,
@@ -96,7 +104,10 @@ export async function fetchForecast(city?: City): Promise<Forecast> {
       code: data.current.weather_code,
       daylight: data.current.is_day,
     },
-    hours: (data.hourly ?? []).slice(0, GRAPH_HOURS).map((hour) => ({
+    hours: (data.hourly ?? []).slice(0, HOURS_AHEAD).map((hour) => ({
+      time: /(?:Z|[+-]\d{2}:\d{2})$/.test(hour.time)
+        ? Date.parse(hour.time)
+        : Date.parse(`${hour.time}Z`) - utcOffsetSeconds * 1000,
       hour: Number(hour.time.slice(11, 13)),
       temp: hour.temperature,
       code: hour.weather_code,

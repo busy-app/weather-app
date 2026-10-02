@@ -29,14 +29,19 @@ const REFRESH_MS = 15 * 60 * 1000;
 
 /** The clock on the weather screen is repainted on the minute. */
 const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
 
 /** Added to the wait so the tick lands after the minute has rolled over, not on its edge. */
 const MINUTE_SKEW_MS = 50;
 
 /** The current conditions, the hours of the graph, and the days after them. */
 let weather: CurrentWeather | undefined;
+let forecastHours: ForecastHour[] = [];
 let hours: ForecastHour[] = [];
 let days: DayForecast[] = [];
+let utcOffsetMs = 0;
+let localDay = 0;
 
 let graph: Graph = { bitmap: "", pins: [] };
 
@@ -49,17 +54,62 @@ let phase: Phase = { screen: "loading", text: "Loading settings" };
 async function refresh(): Promise<void> {
   const place = settings.location;
   const forecast = await fetchForecast(place.mode === "fixed" ? place : undefined);
+  const selectedDate = phase.screen === "days" ? days[phase.day]?.date : undefined;
+  const now = Date.now();
 
   weather = forecast.current;
   days = forecast.days;
+  utcOffsetMs = forecast.utcOffsetSeconds * 1000;
+  forecastHours = forecast.hours;
+
+  updateHours(now);
+  updateDays(now, selectedDate);
+}
+
+function localDayOf(now: number) {
+  return Math.floor((now + utcOffsetMs) / DAY_MS);
+}
+
+function updateDays(now: number, selectedDate: string | undefined) {
+  localDay = localDayOf(now);
+  const today = new Date(localDay * DAY_MS).toISOString().slice(0, 10);
+
+  let first = 0;
+  while (first < days.length && days[first]!.date < today) {
+    first++;
+  }
+
+  if (first > 0) {
+    days = days.slice(first);
+  }
+
+  if (phase.screen === "days") {
+    phase = days.length > 0
+      ? { screen: "days", day: Math.max(0, days.findIndex((day) => day.date === selectedDate)) }
+      : { screen: "weather" };
+  }
+}
+
+function updateHours(now: number) {
+  const selectedTime = phase.screen === "forecast" ? hours[phase.hour]?.time : undefined;
+
+  let first = 0;
+  while (first < forecastHours.length && forecastHours[first]!.time + HOUR_MS <= now) {
+    first++;
+  }
 
   // One rounding for both, so bar heights and readings agree.
-  hours = forecast.hours.slice(0, HOURS).map((hour) => ({
+  hours = forecastHours.slice(first, first + HOURS).map((hour) => ({
     ...hour,
     temp: fromUnits(Math.round(toUnits(hour.temp))),
   }));
 
-  graph = buildGraph(hours.map((hour) => hour.temp));
+  graph = hours.length > 0 ? buildGraph(hours.map((hour) => hour.temp)) : { bitmap: "", pins: [] };
+  if (phase.screen === "forecast") {
+    phase = hours.length > 0
+      ? { screen: "forecast", hour: Math.max(0, hours.findIndex((hour) => hour.time === selectedTime)) }
+      : { screen: "weather" };
+  }
 }
 
 /** The elements on screen, kept between frames so only what moved is rebuilt and sent. */
@@ -203,16 +253,33 @@ function wait(ms: number): Promise<void> {
   });
 }
 
-function scheduleClock(report: (err: unknown) => void) {
-  if (stopped || !settings.showTime) return;
+function scheduleClock() {
+  if (stopped) {
+    return;
+  }
 
   clockTimer = setTimeout(
     () => {
       clockTimer = undefined;
       if (stopped) return;
 
-      if (phase.screen === "weather") paintNow();
-      scheduleClock(report);
+      const now = Date.now();
+      const dayChanged = localDayOf(now) !== localDay;
+
+      const redrawForDay = dayChanged && (phase.screen === "days" || phase.screen === "weather");
+
+      if (dayChanged) {
+        updateDays(now, phase.screen === "days" ? days[phase.day]?.date : undefined);
+      }
+
+      if (hours.length > 0 && hours[0]!.time + HOUR_MS <= now) {
+        updateHours(now);
+        paintNow();
+      } else if (redrawForDay || (settings.showTime && phase.screen === "weather")) {
+        paintNow();
+      }
+
+      scheduleClock();
     },
     MINUTE_MS - (Date.now() % MINUTE_MS) + MINUTE_SKEW_MS,
   );
@@ -268,7 +335,7 @@ export default function run() {
         .catch(report);
     }, REFRESH_MS);
 
-    scheduleClock(report);
+    scheduleClock();
   })();
 
   unbindInput = listen("input", (event) => {
