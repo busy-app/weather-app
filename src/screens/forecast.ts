@@ -7,7 +7,7 @@
 //
 // Everything on it describes the hour the pin stands on, not the present one.
 //
-// The bars are one XPM2 bitmap, built once per forecast. The pin is a static PNG that is
+// The chart is one XPM2 bitmap, built once per forecast. The pin is a static PNG that is
 // moved across the graph, so stepping through the hours re-texts the readings and moves the
 // pin, and sends nothing that did not change.
 
@@ -52,7 +52,7 @@ function formatHour(hour: number): string {
  * The frame.
  *
  * @param hours every hour the graph draws
- * @param graph the bars and the pin position for each hour
+ * @param graph the chart and the pin position for each hour
  * @param at index into `hours` of the one the pin sits on
  */
 export function forecastScreen(frame: Frame, hours: ForecastHour[], graph: Graph, at: number): void {
@@ -74,6 +74,6 @@ export function forecastScreen(frame: Frame, hours: ForecastHour[], graph: Graph
     GRAPH_W - textWidth(sub, "small"),
     center(subBox.height, ROW_H) - subBox.top,
   );
-  frame.xpm("xpm-graph", graph.bitmap, 0, GRAPH_Y);
+  frame.xpm("xpm-graph", graph.bitmap, 0, GRAPH_Y + graph.bitmapY);
   frame.image("pin", "images/pin.png", pin.x, GRAPH_Y + pin.y, PIN_Z);
 }
