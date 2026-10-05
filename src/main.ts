@@ -2,12 +2,14 @@ import { displayClear, displayDraw, outstanding, whenSettled } from "@shared/dev
 import manifest from "./appmeta/manifest.json";
 import {
   fetchForecast,
+  OfflineError,
   type CurrentWeather,
   type DayForecast,
   type ForecastHour,
 } from "./api.ts";
 import { buildGraph, HOURS, type Graph } from "./graph.ts";
 import { daysScreen } from "./screens/days.ts";
+import { errorScreen, FAILED, OFFLINE, type ErrorText } from "./screens/error.ts";
 import { forecastScreen } from "./screens/forecast.ts";
 import { loadingScreen } from "./screens/loading.ts";
 import { weatherScreen } from "./screens/weather.ts";
@@ -17,6 +19,7 @@ import { Frame } from "./frame.ts";
 
 type Phase =
   | { screen: "loading"; text: string }
+  | { screen: "error"; text: ErrorText }
   | { screen: "weather" }
   | { screen: "forecast"; hour: number }
   | { screen: "days"; day: number };
@@ -34,6 +37,9 @@ const DAY_MS = 24 * HOUR_MS;
 
 /** Added to the wait so the tick lands after the minute has rolled over, not on its edge. */
 const MINUTE_SKEW_MS = 50;
+
+/** How long after a lost request the whole frame is sent again. */
+const RESEND_MS = 1000;
 
 /** The current conditions, the hours of the graph, and the days after them. */
 let weather: CurrentWeather | undefined;
@@ -146,6 +152,7 @@ async function tracked<T>(run: () => Promise<T>): Promise<T> {
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 let clockTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
+let resendTimer: ReturnType<typeof setTimeout> | undefined;
 let endWait: (() => void) | undefined;
 let unbindInput: BusyUnbind | undefined;
 let stopped = false;
@@ -155,12 +162,20 @@ let stopped = false;
  *
  * A request the device has not answered counts as something left, so the handler waits for the
  * last reply rather than being dropped alongside it.
+ *
+ * The unbind itself waits for a timer: with nothing else left it hands the app back to the device
+ * on the spot, and `back` calls this from inside the input handler, which is still running.
  */
 function leave(): void {
   if (!stopping || outstanding() > 0 || reading > 0) return;
 
   stopping = false;
-  unbindInput?.();
+  const unbind = unbindInput;
+  unbindInput = undefined;
+  
+  if (unbind !== undefined) {
+    setTimeout(unbind, 0);
+  }
 }
 
 /** Stops the app: clears what it has running and hands it back to the device. */
@@ -174,15 +189,16 @@ function stop() {
   if (refreshTimer !== undefined) clearInterval(refreshTimer);
   if (clockTimer !== undefined) clearTimeout(clockTimer);
   if (retryTimer !== undefined) clearTimeout(retryTimer);
+  if (resendTimer !== undefined) clearTimeout(resendTimer);
 
   endWait?.();
 
   leave();
 }
 
-/** The loading screen needs no data; every other one waits for the first forecast. */
+/** The loading and error screens need no data; every other one waits for the first forecast. */
 function drawable(): boolean {
-  return phase.screen === "loading" || weather !== undefined;
+  return phase.screen === "loading" || phase.screen === "error" || weather !== undefined;
 }
 
 /**
@@ -208,6 +224,8 @@ function paintNow(): void {
 
   if (phase.screen === "loading") {
     loadingScreen(frame, phase.text);
+  } else if (phase.screen === "error") {
+    errorScreen(frame, phase.text);
   } else if (phase.screen === "weather") {
     weatherScreen(frame, weather!, new Date(), {
       time: settings.showTime,
@@ -230,7 +248,7 @@ function paintNow(): void {
   }
 }
 
-/** The screens in the order the ok and start keys cycle through them. `loading` is not among them: it is left behind for good once the forecast arrives. */
+/** The screens in the order the ok and start keys cycle through them. `loading` and `error` are not among them: they are left behind for good once the forecast arrives. */
 const SCREENS = ["weather", "forecast", "days"] as const;
 
 type Screen = (typeof SCREENS)[number];
@@ -243,8 +261,8 @@ function filled(screen: Screen): boolean {
 
 /** Advances to the next non-empty screen, wrapping around. The cursor restarts at the first entry. */
 function nextScreen(): void {
-  // While loading there is no current screen; -1 starts the search at the first one.
-  const from = phase.screen === "loading" ? -1 : SCREENS.indexOf(phase.screen);
+  // Before the first forecast there is no current screen; -1 starts the search at the first one.
+  const from = phase.screen === "loading" || phase.screen === "error" ? -1 : SCREENS.indexOf(phase.screen);
 
   for (let offset = 1; offset <= SCREENS.length; offset++) {
     const screen = SCREENS[(from + offset) % SCREENS.length];
@@ -326,9 +344,10 @@ function scheduleClock() {
 }
 
 /**
- * Keeps asking for the first forecast until one arrives, leaving the spinner up in between.
+ * Keeps asking for the first forecast until one arrives, showing why in between.
  *
  * Without this a start with no network would sit on the spinner until the refresh interval came round a quarter of an hour later.
+ * A failed attempt puts the error up instead of the spinner; the next one that succeeds replaces it with the weather.
  */
 async function firstForecast(report: (err: unknown) => void) {
   for (let attempt = 0; !stopped; attempt++) {
@@ -340,6 +359,9 @@ async function firstForecast(report: (err: unknown) => void) {
       return;
     } catch (err) {
       report(err);
+      if (stopped) return;
+      phase = { screen: "error", text: err instanceof OfflineError ? OFFLINE : FAILED };
+      paintNow();
     }
 
     await wait(RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)]!);
@@ -351,9 +373,23 @@ export default function run() {
     console.error(`${APP}: ${err instanceof Error ? err.message : String(err)}`);
 
   // The frame that was held back goes out the moment the device answers the one it had.
-  whenSettled(() => {
-    if (stopped) leave();
-    else if (held) paintNow();
+  whenSettled((lost) => {
+    if (stopped) {
+      leave();
+      return;
+    }
+
+    if (lost) {
+      frame.invalidate();
+      if (resendTimer === undefined) {
+        resendTimer = setTimeout(() => {
+          resendTimer = undefined;
+          paintNow();
+        }, RESEND_MS);
+      }
+    }
+
+    if (held) paintNow();
   });
 
   // The settings decide which place is asked for and in which scale the readings are drawn, so they come before the first forecast. loadSettings() handles its own failures.

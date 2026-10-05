@@ -12,10 +12,12 @@ export const GRAPH_W = HOURS * BAR_W;
 export const GRAPH_H = 9;
 
 /**
- * The pin's head, in pixels. `images/pin.png` is 3 wide and 9 tall: a 3×3 head over a
- * 1-pixel needle. Only the head decides where the pin is placed.
+ * How far the pin rises above the topmost lit row of the bar it marks. `images/pin.png` is 3 wide
+ * and 9 tall: a 3×3 head over a 1-pixel needle, and the head's middle row sits on the bar's top.
+ *
+ * Any higher and the tallest bar's pin comes within a pixel of the reading above the graph.
  */
-const HEAD_H = 3;
+const HEAD_RISE = 1;
 
 /** A bar's height, in pixels, for the coldest and the warmest hour of the day. */
 const MIN_H = 2;
@@ -143,14 +145,14 @@ function shade(color: readonly [number, number, number], lit: number): number {
   return (Math.round(color[0] * lit) << 16) | (Math.round(color[1] * lit) << 8) | Math.round(color[2] * lit);
 }
 
-/** The pin's corner for each hour: its head above the topmost lit row of the bar it marks. */
+/** The pin's corner for each hour: its head across the topmost lit row of the bar it marks. */
 function pinsFor(placed: number[], resolution: number): Pin[] {
   const pins: Pin[] = [];
 
   for (let hour = 0; hour < placed.length / BAR_W; hour++) {
     // The pin is three wide, so its needle runs down the middle column of the bar.
     const top = Math.floor(placed[hour * BAR_W + 1]! / resolution);
-    pins.push({ x: hour * BAR_W, y: top - HEAD_H + 1 });
+    pins.push({ x: hour * BAR_W, y: top - HEAD_RISE });
   }
 
   return pins;

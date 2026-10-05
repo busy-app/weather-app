@@ -44,6 +44,10 @@ export class Frame {
     this.current.length = 0;
   }
 
+  invalidate(): void {
+    this.live.clear();
+  }
+
   /** Ends a frame, working out which ids have left the screen. */
   end(): void {
     const previous = this.previous;
