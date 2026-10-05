@@ -115,11 +115,24 @@ async function call(path: string, init: RequestInit = {}) {
 /** Requests sent but not answered yet. */
 let inFlight = 0;
 
-/** Run after every request settles, so the app can send what it held back. */
-let onSettled: (() => void) | undefined;
+/**
+ * How long the device gets to answer a request before it is given up as lost.
+ *
+ * Without a limit one reply that never comes holds up every frame after it: the clock stops on
+ * the minute it was last sent.
+ */
+const REPLY_TIMEOUT_MS = 5000;
 
-/** Sets the callback run whenever a request settles. */
-export function whenSettled(fn: () => void): void {
+/** Run after every request settles, so the app can send what it held back. */
+let onSettled: ((lost: boolean) => void) | undefined;
+
+/**
+ * Sets the callback run whenever a request settles.
+ *
+ * `lost` is true when the device gave no answer at all, so what the request carried may never
+ * have reached the screen.
+ */
+export function whenSettled(fn: (lost: boolean) => void): void {
   onSettled = fn;
 }
 
@@ -136,19 +149,31 @@ export function outstanding(): number {
  * as the device can actually work through.
  */
 function send(app: string, label: string, method: string, body: string): void {
-  const settled = (error: string | undefined) => {
+  let done = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const settled = (error: string | undefined, lost: boolean) => {
+    // A reply that turns up after the timeout has already been counted.
+    if (done) {
+      return;
+    }
+    done = true;
+    clearTimeout(timer);
+
     inFlight--;
     if (error !== undefined) console.error(`${app}: ${label} failed: ${error}`);
-    if (onSettled !== undefined) onSettled();
+    if (onSettled !== undefined) onSettled(lost);
   };
+
+  timer = setTimeout(() => settled(`no reply in ${REPLY_TIMEOUT_MS} ms`, true), REPLY_TIMEOUT_MS);
 
   fetch(`${API}/display/draw`, {
     method,
     headers: { "Content-Type": "application/json" },
     body,
   }).then(
-    (res) => settled(res.ok ? undefined : `HTTP ${res.status}`),
-    (err) => settled(err instanceof Error ? err.message : String(err)),
+    (res) => settled(res.ok ? undefined : `HTTP ${res.status}`, false),
+    (err) => settled(err instanceof Error ? err.message : String(err), true),
   );
 }
 

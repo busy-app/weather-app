@@ -16,8 +16,11 @@ import { iconFor } from "../wmo.ts";
 
 const ICON = { width: 7, height: 7 };
 
-/** Space between a label, its icon and its reading. */
+/** Space between a label and its icon. */
 const GAP = 1;
+
+/** Space between an icon and its reading. */
+const TEMP_GAP = 2;
 
 /** Width of "NIGHT", so both rows line up. */
 const LABEL_W = 21;
@@ -43,7 +46,7 @@ const NIGHT_Y = SCREEN.height - ROW_H;
 
 /** The icon and reading sit after the label. */
 const ICON_X = LABEL_W + GAP;
-const TEMP_X = ICON_X + ICON.width + GAP;
+const TEMP_X = ICON_X + ICON.width + TEMP_GAP;
 
 const LIST_W = SCREEN.width - PANEL_W - 1;
 

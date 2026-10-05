@@ -18,9 +18,20 @@ const MAX_FINE_BINS = 256;
 const SYMBOLS = "0123456789abcdefghijklmnopqrstuvwxyz";
 const EMPTY = ".";
 
+/**
+ * A scratch array of `length` zeros.
+ *
+ * Plain arrays rather than typed ones: the firmware frees an ArrayBuffer through a hook that
+ * leaves the ones the engine allocated in place, and the leak fails JerryScript's heap check
+ * when the app exits — "JS fatal error" on `back`.
+ */
+export function zeros(length: number) {
+  return new Array<number>(length).fill(0);
+}
+
 /** The level each of the 256 channel values falls in, squared so the dark end keeps its steps. */
-function levelTable(levels: number): Uint8Array {
-  const table = new Uint8Array(256);
+function levelTable(levels: number) {
+  const table = zeros(256);
 
   for (let level = 0; level < levels; level++) {
     const from = Math.ceil(((level * level) / (levels * levels)) * 255);
@@ -34,9 +45,9 @@ function levelTable(levels: number): Uint8Array {
 const FINE = levelTable(FINE_LEVELS);
 
 /** The coarse level each fine level falls in, so a coarser pass moves the same pixels. */
-function coarseTable(levels: number): Uint8Array {
+function coarseTable(levels: number) {
   const coarse = levelTable(levels);
-  const map = new Uint8Array(FINE_LEVELS);
+  const map = zeros(FINE_LEVELS);
   const per = FINE_LEVELS * FINE_LEVELS;
 
   for (let level = 0; level < FINE_LEVELS; level++) {
@@ -51,23 +62,22 @@ function coarseTable(levels: number): Uint8Array {
 const COARSE = COARSER_LEVELS.map(coarseTable);
 
 // Scratch, kept between builds: one chart is quantised at a time, and on the device these buffers
-// would otherwise be allocated and abandoned on every forecast. Buckets fit a 16-bit slot; the
-// colour sums, which reach the hundreds of thousands, do not.
-const binOfKey = new Int16Array(1 << 12);
-const binOfColor = new Int16Array(MAX_FINE_BINS);
-const fineKey = new Int16Array(MAX_FINE_BINS);
-const fineR = new Int32Array(MAX_FINE_BINS);
-const fineG = new Int32Array(MAX_FINE_BINS);
-const fineB = new Int32Array(MAX_FINE_BINS);
-const fineCount = new Int16Array(MAX_FINE_BINS);
-const colorR = new Int32Array(MAX_COLORS);
-const colorG = new Int32Array(MAX_COLORS);
-const colorB = new Int32Array(MAX_COLORS);
-const colorCount = new Int16Array(MAX_COLORS);
-let binOfPixel = new Int16Array(0);
+// would otherwise be allocated and abandoned on every forecast.
+const binOfKey = zeros(1 << 12);
+const binOfColor = zeros(MAX_FINE_BINS);
+const fineKey = zeros(MAX_FINE_BINS);
+const fineR = zeros(MAX_FINE_BINS);
+const fineG = zeros(MAX_FINE_BINS);
+const fineB = zeros(MAX_FINE_BINS);
+const fineCount = zeros(MAX_FINE_BINS);
+const colorR = zeros(MAX_COLORS);
+const colorG = zeros(MAX_COLORS);
+const colorB = zeros(MAX_COLORS);
+const colorCount = zeros(MAX_COLORS);
+let binOfPixel: number[] = [];
 
 /** One bucket's key on a `levels`-step scale, from its key on the fine one. */
-function coarser(key: number, map: Uint8Array, levels: number): number {
+function coarser(key: number, map: number[], levels: number): number {
   const r = map[(key >> 8) & 0xf]!;
   const g = map[(key >> 4) & 0xf]!;
   const b = map[key & 0xf]!;
@@ -81,9 +91,9 @@ function hex(r: number, g: number, b: number): string {
 }
 
 /** Buckets what the pixels came out as until they fit a bitmap, and writes the XPM2. */
-export function quantize(pixels: Int32Array, width: number, height: number): string {
+export function quantize(pixels: number[], width: number, height: number): string {
   const size = width * height;
-  if (binOfPixel.length < size) binOfPixel = new Int16Array(size);
+  if (binOfPixel.length < size) binOfPixel = zeros(size);
   binOfPixel.fill(-1, 0, size);
 
   // First pass: bucket every pixel on the fine scale, keeping the colours that fall in each bucket.

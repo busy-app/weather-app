@@ -22,7 +22,7 @@ import { iconFor } from "../wmo.ts";
 const ICON = { width: 7, height: 7 };
 
 /** Space between the icon and the temperature. */
-const GAP = 2;
+const GAP = 1;
 
 /** Height of the line above the graph; the icon sets it. */
 const ROW_H = ICON.height;

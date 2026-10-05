@@ -65,8 +65,16 @@ const HOURS_AHEAD = HOURS * 2;
 
 export const FORECAST_DAYS = 7;
 
+/** The backend was never reached: no network, or the connection to it failed. */
+export class OfflineError extends Error {}
+
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${PREFIX}${path}`, SIGNED);
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${PREFIX}${path}`, SIGNED);
+  } catch (err) {
+    throw new OfflineError(`weather api: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   if (!res.ok) {
     const detail = await res
