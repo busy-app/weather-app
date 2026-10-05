@@ -4,7 +4,7 @@
 // pixel the curve cuts through, held back to how much of it the curve covers.
 
 import { tempChannels } from "./tempColor.ts";
-import { quantize, zeros } from "./quantize.ts";
+import { quantize } from "./quantize.ts";
 
 export const HOURS = 24;
 export const BAR_W = 3;
@@ -35,9 +35,9 @@ const TOP_LIGHT = 255;
 const FOOT_LIGHT = 215;
 
 // Scratch for one chart at a time, kept between builds rather than allocated on every forecast.
-const solid = zeros(GRAPH_W);
-const cut = zeros(GRAPH_W);
-const pixels = zeros(GRAPH_W * GRAPH_H);
+const solid = new Int32Array(GRAPH_W);
+const cut = new Int32Array(GRAPH_W);
+const pixels = new Int32Array(GRAPH_W * GRAPH_H);
 
 /** Where the pin's top-left corner sits for one hour. */
 export interface Pin {
