@@ -65,7 +65,6 @@ const HOURS_AHEAD = HOURS * 2;
 
 export const FORECAST_DAYS = 7;
 
-/** The backend was never reached: no network, or the connection to it failed. */
 export class OfflineError extends Error {}
 
 async function get<T>(path: string): Promise<T> {

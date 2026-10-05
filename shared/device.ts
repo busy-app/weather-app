@@ -115,24 +115,12 @@ async function call(path: string, init: RequestInit = {}) {
 /** Requests sent but not answered yet. */
 let inFlight = 0;
 
-/**
- * How long the device gets to answer a request before it is given up as lost.
- *
- * Without a limit one reply that never comes holds up every frame after it: the clock stops on
- * the minute it was last sent.
- */
 const REPLY_TIMEOUT_MS = 5000;
 
 /** Run after every request settles, so the app can send what it held back. */
 let onSettled: ((lost: boolean) => void) | undefined;
 
-/**
- * Sets the callback run whenever a request settles.
- *
- * `lost` is true when the device gave no answer at all, so what the request carried may never
- * have reached the screen.
- */
-export function whenSettled(fn: (lost: boolean) => void): void {
+export function whenSettled(fn: (lost: boolean) => void) {
   onSettled = fn;
 }
 
@@ -153,10 +141,10 @@ function send(app: string, label: string, method: string, body: string): void {
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const settled = (error: string | undefined, lost: boolean) => {
-    // A reply that turns up after the timeout has already been counted.
     if (done) {
       return;
     }
+
     done = true;
     clearTimeout(timer);
 
