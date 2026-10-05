@@ -21,6 +21,12 @@ export type Condition =
 /** Conditions that look different by day and by night; their assets carry a `_day`/`_night` suffix. */
 const DIURNAL = new Set<Condition>(["clear", "mclear", "pcloudy"]);
 
+/**
+ * Night assets for conditions that have none of their own: an overcast night still shows the moon,
+ * behind the cloud of the partly cloudy one. The rest — rain, snow, fog — look the same either way.
+ */
+const NIGHT_STAND_INS = new Map<Condition, string>([["cloudy", "pcloudy_night"]]);
+
 /** WMO code → condition. Anything unlisted is drawn as cloudy. */
 const CONDITIONS = new Map<number, Condition>([
   [0, "clear"],
@@ -75,7 +81,8 @@ function assetFor(wmo: number, daylight: boolean): string {
   let name = ASSETS.get(key);
   if (name === undefined) {
     const condition = conditionOf(wmo);
-    name = DIURNAL.has(condition) ? `${condition}_${daylight ? "day" : "night"}` : condition;
+    const stand = daylight ? undefined : NIGHT_STAND_INS.get(condition);
+    name = stand ?? (DIURNAL.has(condition) ? `${condition}_${daylight ? "day" : "night"}` : condition);
     ASSETS.set(key, name);
   }
   return name;

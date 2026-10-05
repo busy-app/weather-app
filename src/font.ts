@@ -65,6 +65,14 @@ export function capBox(font: Font): InkBox {
 const BOXES: Record<Font, Map<string, InkBox>> = { bold: new Map(), small: new Map() };
 
 /**
+ * How many boxes a font keeps before it starts over.
+ *
+ * Not every string comes round again: a clock line is new every minute, and a cache that kept them
+ * all grew until the JS heap ran out.
+ */
+const MAX_BOXES = 64;
+
+/**
  * The layout box of `text`: the top of its visible pixels and the cap height the line occupies.
  *
  * Descenders are not counted: a line of text is as tall as its capitals, so one with a "g"
@@ -83,6 +91,10 @@ export function textBox(text: string, font: Font): InkBox {
   }
 
   const box = top === Infinity ? { top: 0, height: 0 } : { top, height: Math.max(0, ASCENT[font] - top) };
+  if (boxes.size >= MAX_BOXES) {
+    boxes.clear();
+  }
+  
   boxes.set(text, box);
   return box;
 }

@@ -60,6 +60,9 @@ const THUMB_COLOR = "#FFFFFFFF";
 /** The dates as they are drawn, by ISO date. */
 const dates = new Map<string, string>();
 
+/** A new day joins every day the app runs, so the old ones are let go past a fortnight's worth. */
+const MAX_DATES = 14;
+
 /** "23 May" */
 function formatDate(date: string): string {
   const known = dates.get(date);
@@ -67,6 +70,11 @@ function formatDate(date: string): string {
 
   const at = new Date(`${date}T12:00:00`);
   const text = `${formatDay(at)} ${formatMonth(at)}`;
+  
+  if (dates.size >= MAX_DATES) {
+    dates.clear();
+  }
+  
   dates.set(date, text);
   return text;
 }
