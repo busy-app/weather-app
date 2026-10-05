@@ -30,28 +30,33 @@ function hex(r: number, g: number, b: number): string {
   return `#${pair(r)}${pair(g)}${pair(b)}`.toUpperCase();
 }
 
-/** The color for `temp`, mixed from the anchors it falls between. */
-export function tempColor(temp: number): string {
-  const first = STOPS[0];
-  const last = STOPS[STOPS.length - 1];
-  if (temp <= first.temp) return first.color;
-  if (temp >= last.temp) return last.color;
+/** The color for `temp`, as its three channels. */
+export function tempChannels(temp: number): [number, number, number] {
+  const first = STOPS[0]!;
+  const last = STOPS[STOPS.length - 1]!;
+  if (temp <= first.temp) return channels(first.color);
+  if (temp >= last.temp) return channels(last.color);
 
   for (let i = 1; i < STOPS.length; i++) {
-    const upper = STOPS[i];
+    const upper = STOPS[i]!;
     if (temp > upper.temp) continue;
 
-    const lower = STOPS[i - 1];
+    const lower = STOPS[i - 1]!;
     const ratio = (temp - lower.temp) / (upper.temp - lower.temp);
+    const from = channels(lower.color);
+    const to = channels(upper.color);
 
-    const [r1, g1, b1] = channels(lower.color);
-    const [r2, g2, b2] = channels(upper.color);
-    return hex(
-      r1 + (r2 - r1) * ratio,
-      g1 + (g2 - g1) * ratio,
-      b1 + (b2 - b1) * ratio,
-    );
+    return [
+      from[0] + (to[0] - from[0]) * ratio,
+      from[1] + (to[1] - from[1]) * ratio,
+      from[2] + (to[2] - from[2]) * ratio,
+    ];
   }
 
-  return last.color;
+  return channels(last.color);
+}
+
+/** The color for `temp`, mixed from the anchors it falls between. */
+export function tempColor(temp: number): string {
+  return hex(...tempChannels(temp));
 }

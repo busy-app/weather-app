@@ -43,7 +43,7 @@ let days: DayForecast[] = [];
 let utcOffsetMs = 0;
 let localDay = 0;
 
-let graph: Graph = { bitmap: "", pins: [] };
+let graph: Graph = { bitmap: "", bitmapY: 0, pins: [] };
 
 /** Read once at startup; a change takes effect when the app is restarted. */
 let settings: Settings = DEFAULTS;
@@ -53,17 +53,20 @@ let phase: Phase = { screen: "loading", text: "Loading settings" };
 /** Reads the forecast. Failures leave the last good data on screen. */
 async function refresh(): Promise<void> {
   const place = settings.location;
-  const forecast = await fetchForecast(place.mode === "fixed" ? place : undefined);
-  const selectedDate = phase.screen === "days" ? days[phase.day]?.date : undefined;
-  const now = Date.now();
 
-  weather = forecast.current;
-  days = forecast.days;
-  utcOffsetMs = forecast.utcOffsetSeconds * 1000;
-  forecastHours = forecast.hours;
+  await tracked(async () => {
+    const forecast = await fetchForecast(place.mode === "fixed" ? place : undefined);
+    const selectedDate = phase.screen === "days" ? days[phase.day]?.date : undefined;
+    const now = Date.now();
 
-  updateHours(now);
-  updateDays(now, selectedDate);
+    weather = forecast.current;
+    days = forecast.days;
+    utcOffsetMs = forecast.utcOffsetSeconds * 1000;
+    forecastHours = forecast.hours;
+
+    updateHours(now);
+    updateDays(now, selectedDate);
+  });
 }
 
 function localDayOf(now: number) {
@@ -104,7 +107,9 @@ function updateHours(now: number) {
     temp: fromUnits(Math.round(toUnits(hour.temp))),
   }));
 
-  graph = hours.length > 0 ? buildGraph(hours.map((hour) => hour.temp)) : { bitmap: "", pins: [] };
+  graph = hours.length > 0
+    ? buildGraph(hours.map((hour) => hour.temp))
+    : { bitmap: "", bitmapY: 0, pins: [] };
   if (phase.screen === "forecast") {
     phase = hours.length > 0
       ? { screen: "forecast", hour: Math.max(0, hours.findIndex((hour) => hour.time === selectedTime)) }
@@ -118,6 +123,26 @@ const frame = new Frame();
 /** A frame was asked for while the device still had one; it goes out when the device answers. */
 let held = false;
 
+/** The app was asked to stop and still had something out; the handler goes once it does not. */
+let stopping = false;
+
+/** Requests of the app's own the device has not answered yet: its readings and its settings. */
+let reading = 0;
+
+/**
+ * Runs one of the app's own requests: the device will not stop an app while one is outstanding.
+ */
+async function tracked<T>(run: () => Promise<T>): Promise<T> {
+  reading += 1;
+
+  try {
+    return await run();
+  } finally {
+    reading -= 1;
+    leave();
+  }
+}
+
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 let clockTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -125,11 +150,26 @@ let endWait: (() => void) | undefined;
 let unbindInput: BusyUnbind | undefined;
 let stopped = false;
 
+/**
+ * Detaches the input handler, once the app has nothing left running.
+ *
+ * A request the device has not answered counts as something left, so the handler waits for the
+ * last reply rather than being dropped alongside it.
+ */
+function leave(): void {
+  if (!stopping || outstanding() > 0 || reading > 0) return;
+
+  stopping = false;
+  unbindInput?.();
+}
+
+/** Stops the app: clears what it has running and hands it back to the device. */
 function stop() {
   if (stopped) return;
 
   stopped = true;
   held = false;
+  stopping = true;
 
   if (refreshTimer !== undefined) clearInterval(refreshTimer);
   if (clockTimer !== undefined) clearTimeout(clockTimer);
@@ -137,7 +177,7 @@ function stop() {
 
   endWait?.();
 
-  if (unbindInput) setTimeout(unbindInput, 10);
+  leave();
 }
 
 /** The loading screen needs no data; every other one waits for the first forecast. */
@@ -312,14 +352,15 @@ export default function run() {
 
   // The frame that was held back goes out the moment the device answers the one it had.
   whenSettled(() => {
-    if (held && !stopped) paintNow();
+    if (stopped) leave();
+    else if (held) paintNow();
   });
 
   // The settings decide which place is asked for and in which scale the readings are drawn, so they come before the first forecast. loadSettings() handles its own failures.
   void (async () => {
     paintNow();
 
-    settings = await loadSettings();
+    settings = await tracked(loadSettings);
     setUnits(settings.units);
 
     phase = { screen: "loading", text: "Loading weather" };
