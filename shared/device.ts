@@ -118,9 +118,9 @@ let inFlight = 0;
 const REPLY_TIMEOUT_MS = 5000;
 
 /** Run after every request settles, so the app can send what it held back. */
-let onSettled: ((lost: boolean) => void) | undefined;
+let onSettled: ((failed: boolean) => void) | undefined;
 
-export function whenSettled(fn: (lost: boolean) => void) {
+export function whenSettled(fn: (failed: boolean) => void) {
   onSettled = fn;
 }
 
@@ -140,7 +140,7 @@ function send(app: string, label: string, method: string, body: string): void {
   let done = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
-  const settled = (error: string | undefined, lost: boolean) => {
+  const settled = (error: string | undefined) => {
     if (done) {
       return;
     }
@@ -150,18 +150,18 @@ function send(app: string, label: string, method: string, body: string): void {
 
     inFlight--;
     if (error !== undefined) console.error(`${app}: ${label} failed: ${error}`);
-    if (onSettled !== undefined) onSettled(lost);
+    if (onSettled !== undefined) onSettled(error !== undefined);
   };
 
-  timer = setTimeout(() => settled(`no reply in ${REPLY_TIMEOUT_MS} ms`, true), REPLY_TIMEOUT_MS);
+  timer = setTimeout(() => settled(`no reply in ${REPLY_TIMEOUT_MS} ms`), REPLY_TIMEOUT_MS);
 
   fetch(`${API}/display/draw`, {
     method,
     headers: { "Content-Type": "application/json" },
     body,
   }).then(
-    (res) => settled(res.ok ? undefined : `HTTP ${res.status}`, false),
-    (err) => settled(err instanceof Error ? err.message : String(err), true),
+    (res) => settled(res.ok ? undefined : `HTTP ${res.status}`),
+    (err) => settled(err instanceof Error ? err.message : String(err)),
   );
 }
 

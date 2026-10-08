@@ -38,7 +38,7 @@ const DAY_MS = 24 * HOUR_MS;
 /** Added to the wait so the tick lands after the minute has rolled over, not on its edge. */
 const MINUTE_SKEW_MS = 50;
 
-/** How long after a lost request the whole frame is sent again. */
+/** How long after a request the device did not take the whole frame is sent again. */
 const RESEND_MS = 1000;
 
 /** The current conditions, the hours of the graph, and the days after them. */
@@ -373,13 +373,13 @@ export default function run() {
     console.error(`${APP}: ${err instanceof Error ? err.message : String(err)}`);
 
   // The frame that was held back goes out the moment the device answers the one it had.
-  whenSettled((lost) => {
+  whenSettled((failed) => {
     if (stopped) {
       leave();
       return;
     }
 
-    if (lost) {
+    if (failed) {
       frame.invalidate();
       if (resendTimer === undefined) {
         resendTimer = setTimeout(() => {
