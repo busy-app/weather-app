@@ -98,7 +98,6 @@ export interface AppSettingsDocument {
   values: Record<string, unknown>;
 }
 
-/** Where the device is in joining a network. */
 export type WifiState =
   | "unknown"
   | "disconnected"
