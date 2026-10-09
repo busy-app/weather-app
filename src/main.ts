@@ -1,4 +1,4 @@
-import { displayClear, displayDraw, outstanding, whenSettled } from "@shared/device";
+import { displayClear, displayDraw, getWifiState, outstanding, whenSettled } from "@shared/device";
 import manifest from "./appmeta/manifest.json";
 import {
   fetchForecast,
@@ -300,6 +300,9 @@ function scroll(delta: number): boolean {
 /** How long the first forecast waits before trying again, doubling until the last entry. */
 const RETRY_MS = [3000, 6000, 12000, 24000, 48000, 60000];
 
+const JOINING = "Connecting Wi-Fi";
+const JOINING_RETRY_MS = 2000;
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
     endWait = resolve;
@@ -343,6 +346,18 @@ function scheduleClock() {
   );
 }
 
+async function failure(err: unknown): Promise<Phase> {
+  if (err instanceof OfflineError) {
+    const state = await tracked(getWifiState).catch(() => undefined);
+
+    if (state === "connecting" || state === "reconnecting") {
+      return { screen: "loading", text: JOINING };
+    }
+  }
+
+  return { screen: "error", text: err instanceof OfflineError ? OFFLINE : FAILED };
+}
+
 /**
  * Keeps asking for the first forecast until one arrives, showing why in between.
  *
@@ -350,7 +365,7 @@ function scheduleClock() {
  * A failed attempt puts the error up instead of the spinner; the next one that succeeds replaces it with the weather.
  */
 async function firstForecast(report: (err: unknown) => void) {
-  for (let attempt = 0; !stopped; attempt++) {
+  for (let attempt = 0; !stopped; ) {
     try {
       await refresh();
       if (stopped) return;
@@ -360,11 +375,17 @@ async function firstForecast(report: (err: unknown) => void) {
     } catch (err) {
       report(err);
       if (stopped) return;
-      phase = { screen: "error", text: err instanceof OfflineError ? OFFLINE : FAILED };
+      phase = await failure(err);
+      if (stopped) return;
       paintNow();
     }
 
-    await wait(RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)]!);
+    if (phase.screen === "loading") {
+      await wait(JOINING_RETRY_MS);
+    } else {
+      await wait(RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)]!);
+      attempt++;
+    }
   }
 }
 
