@@ -98,6 +98,16 @@ export interface AppSettingsDocument {
   values: Record<string, unknown>;
 }
 
+/** Where the device is in joining a network. */
+export type WifiState =
+  | "unknown"
+  | "disconnected"
+  | "connected"
+  | "connecting"
+  | "disconnecting"
+  | "reconnecting";
+
+
 /** Device address; in dev from VITE_BUSY_ADDR (.env). */
 const addr = import.meta.env.VITE_BUSY_ADDR ?? "localhost";
 const API = `${/^https?:\/\//i.test(addr) ? addr : `http://${addr}`}/api`;
@@ -177,6 +187,11 @@ export function displayClear(request: ClearRequest): void {
   const body = JSON.stringify(request);
   inFlight++;
   send(request.application_name ?? "?", "clear", "DELETE", body);
+}
+
+export async function getWifiState(): Promise<WifiState> {
+  const res = await call("/wifi/status");
+  return ((await res.json()) as { state?: WifiState }).state ?? "unknown";
 }
 
 export async function getAppSettings(appId: string): Promise<AppSettingsDocument> {
