@@ -98,8 +98,8 @@ export interface AppSettingsDocument {
   values: Record<string, unknown>;
 }
 
-/** Device address; in dev from VITE_BUSY_ADDR (.env). */
-const addr = import.meta.env.VITE_BUSY_ADDR ?? "localhost";
+/** Device address, set at build time with `busy-cli build --addr`. */
+const addr = __BUSY_ADDR__;
 const API = `${/^https?:\/\//i.test(addr) ? addr : `http://${addr}`}/api`;
 
 async function call(path: string, init: RequestInit = {}) {

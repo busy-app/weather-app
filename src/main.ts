@@ -368,7 +368,10 @@ async function firstForecast(report: (err: unknown) => void) {
   }
 }
 
-export default function run() {
+/**
+ * Entry point, called at the end of the file: the device runs this script from top to bottom and starts nothing by itself.
+ */
+function main(): void {
   const report = (err: unknown) =>
     console.error(`${APP}: ${err instanceof Error ? err.message : String(err)}`);
 
@@ -435,3 +438,5 @@ export default function run() {
     paintNow();
   });
 }
+
+main();

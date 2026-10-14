@@ -1,8 +1,7 @@
-/// <reference types="vite/client" />
+/** BUSY Bar address the app connects to, set at build time with `busy-cli build --addr`; `localhost` by default, the device the app runs on. */
+declare const __BUSY_ADDR__: string
 
 interface ImportMetaEnv {
-  /** BUSY Bar address for dev mode (see .env). */
-  readonly VITE_BUSY_ADDR?: string
   /** Base URL of the weather backend; set in CI (see .env). */
   readonly VITE_WEATHER_API?: string
 }
@@ -20,10 +19,6 @@ declare function fetch(
   input: RequestInfo | URL,
   init?: BusyRequestInit,
 ): Promise<Response>
-
-interface ImportMeta {
-  readonly env: ImportMetaEnv
-}
 
 /** A .anim file is a binary device asset; Vite returns its URL. */
 declare module '*.anim' {
@@ -54,4 +49,3 @@ declare function listen(
   type: 'input',
   handler: (event: BusyInputEvent) => void,
 ): BusyUnbind
-

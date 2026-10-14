@@ -1,20 +1,13 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-pnpm-debug.log*
-
 node_modules
 dist
-*.local
-*.tsbuildinfo
+*.log
 
-# envs
+# Vite reads these, and they tend to hold secrets
 .env
 .env.*
 !.env.example
 
-# Editor directories and files
+# Editor and OS files
 .vscode/*
 !.vscode/extensions.json
 .idea
