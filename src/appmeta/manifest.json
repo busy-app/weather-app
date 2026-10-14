@@ -3,8 +3,7 @@
   "id": "app.busy.weather",
   "name": "Weather",
   "version": "0.5.2",
+  "api_version": "27.9.0",
   "description": "Weather forecast",
-  "author": "Flipper FZCO",
-  "heap_size_kib": 128,
-  "debug": false
+  "author": "Flipper FZCO"
 }
