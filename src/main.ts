@@ -172,7 +172,7 @@ function leave(): void {
   stopping = false;
   const unbind = unbindInput;
   unbindInput = undefined;
-  
+
   if (unbind !== undefined) {
     setTimeout(unbind, 0);
   }
@@ -300,7 +300,7 @@ function scroll(delta: number): boolean {
 /** How long the first forecast waits before trying again, doubling until the last entry. */
 const RETRY_MS = [3000, 6000, 12000, 24000, 48000, 60000];
 
-const JOINING = "Connecting Wi-Fi";
+const JOINING_TEXT = "Connecting Wi-Fi";
 const JOINING_RETRY_MS = 2000;
 
 /** Requests right after the link comes up still fail: hold the loader instead of flashing the error. */
@@ -359,12 +359,12 @@ async function failure(err: unknown): Promise<Phase> {
     if (state === "connecting" || state === "reconnecting") {
       joining = true;
       settleAttempts = 0;
-      return { screen: "loading", text: JOINING };
+      return { screen: "loading", text: JOINING_TEXT };
     }
 
     if (joining && settleAttempts < SETTLE_ATTEMPTS) {
       settleAttempts++;
-      return { screen: "loading", text: JOINING };
+      return { screen: "loading", text: JOINING_TEXT };
     }
   }
 
@@ -379,7 +379,7 @@ async function failure(err: unknown): Promise<Phase> {
  * A failed attempt puts the error up instead of the spinner; the next one that succeeds replaces it with the weather.
  */
 async function firstForecast(report: (err: unknown) => void) {
-  for (let attempt = 0; !stopped; ) {
+  for (let attempt = 0; !stopped;) {
     try {
       await refresh();
       if (stopped) return;
