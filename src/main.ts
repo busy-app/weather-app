@@ -300,8 +300,10 @@ function scroll(delta: number): boolean {
 /** How long the first forecast waits before trying again, doubling until the last entry. */
 const RETRY_MS = [3000, 6000, 12000, 24000, 48000, 60000];
 
+const LOADING_TEXT = "Loading weather";
 const JOINING_TEXT = "Connecting Wi-Fi";
 const JOINING_RETRY_MS = 2000;
+const JOINING_WAITS = 5;
 
 /** Requests right after the link comes up still fail: hold the loader instead of flashing the error. */
 const SETTLE_ATTEMPTS = 3;
@@ -352,6 +354,15 @@ function scheduleClock() {
   );
 }
 
+async function linkPending(waited: number) {
+  const state = await tracked(getWifiState).catch(() => undefined);
+  if (state === "connected") {
+    return false;
+  }
+
+  return state === "connecting" || state === "reconnecting" || waited < JOINING_WAITS;
+}
+
 async function failure(err: unknown): Promise<Phase> {
   if (err instanceof OfflineError) {
     const state = await tracked(getWifiState).catch(() => undefined);
@@ -379,7 +390,22 @@ async function failure(err: unknown): Promise<Phase> {
  * A failed attempt puts the error up instead of the spinner; the next one that succeeds replaces it with the weather.
  */
 async function firstForecast(report: (err: unknown) => void) {
-  for (let attempt = 0; !stopped;) {
+  for (let attempt = 0, waited = 0; !stopped;) {
+    if (await linkPending(waited)) {
+      waited++;
+      joining = true;
+      settleAttempts = 0;
+      phase = { screen: "loading", text: JOINING_TEXT };
+      paintNow();
+      await wait(JOINING_RETRY_MS);
+      continue;
+    }
+
+    if (phase.screen === "loading") {
+      phase = { screen: "loading", text: LOADING_TEXT };
+      paintNow();
+    }
+
     try {
       await refresh();
       if (stopped) return;
@@ -436,9 +462,6 @@ function main(): void {
 
     settings = await tracked(loadSettings);
     setUnits(settings.units);
-
-    phase = { screen: "loading", text: "Loading weather" };
-    paintNow();
 
     await firstForecast(report);
     if (stopped) return;
