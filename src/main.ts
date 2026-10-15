@@ -303,6 +303,12 @@ const RETRY_MS = [3000, 6000, 12000, 24000, 48000, 60000];
 const JOINING = "Connecting Wi-Fi";
 const JOINING_RETRY_MS = 2000;
 
+/** Requests right after the link comes up still fail: hold the loader instead of flashing the error. */
+const SETTLE_ATTEMPTS = 3;
+
+let joining = false;
+let settleAttempts = 0;
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
     endWait = resolve;
@@ -351,10 +357,18 @@ async function failure(err: unknown): Promise<Phase> {
     const state = await tracked(getWifiState).catch(() => undefined);
 
     if (state === "connecting" || state === "reconnecting") {
+      joining = true;
+      settleAttempts = 0;
+      return { screen: "loading", text: JOINING };
+    }
+
+    if (joining && settleAttempts < SETTLE_ATTEMPTS) {
+      settleAttempts++;
       return { screen: "loading", text: JOINING };
     }
   }
 
+  joining = false;
   return { screen: "error", text: err instanceof OfflineError ? OFFLINE : FAILED };
 }
 
@@ -448,12 +462,12 @@ function main(): void {
       return;
     }
 
-    if (event.action !== "press") return;
-
     if (event.key === "back") {
-      stop();
+      if (event.action === "short") stop();
       return;
     }
+
+    if (event.action !== "press") return;
 
     nextScreen();
     paintNow();
