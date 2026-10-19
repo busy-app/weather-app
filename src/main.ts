@@ -172,7 +172,7 @@ function leave(): void {
   stopping = false;
   const unbind = unbindInput;
   unbindInput = undefined;
-  
+
   if (unbind !== undefined) {
     setTimeout(unbind, 0);
   }
@@ -300,8 +300,16 @@ function scroll(delta: number): boolean {
 /** How long the first forecast waits before trying again, doubling until the last entry. */
 const RETRY_MS = [3000, 6000, 12000, 24000, 48000, 60000];
 
-const JOINING = "Connecting Wi-Fi";
+const LOADING_TEXT = "Loading weather";
+const JOINING_TEXT = "Connecting Wi-Fi";
 const JOINING_RETRY_MS = 2000;
+const JOINING_WAITS = 5;
+
+/** Requests right after the link comes up still fail: hold the loader instead of flashing the error. */
+const SETTLE_ATTEMPTS = 3;
+
+let joining = false;
+let settleAttempts = 0;
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -346,15 +354,32 @@ function scheduleClock() {
   );
 }
 
+async function linkPending(waited: number) {
+  const state = await tracked(getWifiState).catch(() => undefined);
+  if (state === "connected") {
+    return false;
+  }
+
+  return state === "connecting" || state === "reconnecting" || waited < JOINING_WAITS;
+}
+
 async function failure(err: unknown): Promise<Phase> {
   if (err instanceof OfflineError) {
     const state = await tracked(getWifiState).catch(() => undefined);
 
     if (state === "connecting" || state === "reconnecting") {
-      return { screen: "loading", text: JOINING };
+      joining = true;
+      settleAttempts = 0;
+      return { screen: "loading", text: JOINING_TEXT };
+    }
+
+    if (joining && settleAttempts < SETTLE_ATTEMPTS) {
+      settleAttempts++;
+      return { screen: "loading", text: JOINING_TEXT };
     }
   }
 
+  joining = false;
   return { screen: "error", text: err instanceof OfflineError ? OFFLINE : FAILED };
 }
 
@@ -365,7 +390,22 @@ async function failure(err: unknown): Promise<Phase> {
  * A failed attempt puts the error up instead of the spinner; the next one that succeeds replaces it with the weather.
  */
 async function firstForecast(report: (err: unknown) => void) {
-  for (let attempt = 0; !stopped; ) {
+  for (let attempt = 0, waited = 0; !stopped;) {
+    if (await linkPending(waited)) {
+      waited++;
+      joining = true;
+      settleAttempts = 0;
+      phase = { screen: "loading", text: JOINING_TEXT };
+      paintNow();
+      await wait(JOINING_RETRY_MS);
+      continue;
+    }
+
+    if (phase.screen === "loading") {
+      phase = { screen: "loading", text: LOADING_TEXT };
+      paintNow();
+    }
+
     try {
       await refresh();
       if (stopped) return;
@@ -423,9 +463,6 @@ function main(): void {
     settings = await tracked(loadSettings);
     setUnits(settings.units);
 
-    phase = { screen: "loading", text: "Loading weather" };
-    paintNow();
-
     await firstForecast(report);
     if (stopped) return;
 
@@ -448,12 +485,12 @@ function main(): void {
       return;
     }
 
-    if (event.action !== "press") return;
-
     if (event.key === "back") {
-      stop();
+      if (event.action === "short") stop();
       return;
     }
+
+    if (event.action !== "press") return;
 
     nextScreen();
     paintNow();
