@@ -20,10 +20,12 @@ The forecast is fetched on launch and every 15 minutes after.
 ```sh
 pnpm install
 cp .env.example .env   # set VITE_WEATHER_API to the weather backend
-pnpm build
+pnpm build             # build the app into dist/app.busy.weather.tgz
+pnpm app:install       # install it on the BUSY Bar connected over USB
+pnpm app:run           # launch the installed app
 ```
 
-The app's id is `app.busy.weather`, set in `src/appmeta/manifest.json`. An id is `<namespace>.<app>`, at most 32 characters, made of letters, digits, dots, and underscores. If yours still says `app.example`, change it to your own namespace before publishing.
+The app's id is `app.busy.weather`, set in `src/appmeta/manifest.json`. An id is `<namespace>.<app>`, at most 32 characters, made of Latin letters, digits, underscores, dashes, and dots, and not starting with a dot. If yours still says `app.example`, change it to your own namespace before publishing.
 
 ## Layout
 
@@ -38,7 +40,7 @@ my-app/
 ├── src/                          the app
 │   ├── main.ts                   the entry point: function main(), called at the end
 │   ├── appmeta/
-│   │   ├── manifest.json         id, name, version
+│   │   ├── manifest.json         id, name, version, api_version
 │   │   ├── settings.json         the settings screen — optional
 │   │   ├── icon_front_8x8.png    front icon, 8×8 color — optional
 │   │   └── icon_back_11x11.png   back icon, 11×11 grayscale — optional
@@ -69,22 +71,24 @@ Everything the app draws is placed by hand, in screen pixels: each screen builds
 
 ## Input
 
-`listen("input", handler)` delivers the device keys: `ok`, `start` and `back` with a `press` / `release` action, and `encoder` with a `delta` of `1` or `-1`. It returns an unbind function.
+`listen("input", handler)` delivers the device keys: `ok`, `start` and `back` with a `press` / `release` / `short` / `long` / `repeat` action, and `encoder` with a `delta` of `1` or `-1`. It returns an unbind function.
+
+Use `short` as the default action for a button press: it fires once, after a normal press and release. `press` fires immediately on key down and is followed by `short`, so handling `press` as a tap can react twice. Use `long` and `repeat` for hold gestures.
 
 ## Commands
 
 | Command | Description |
 | --- | --- |
-| `pnpm build` | empties `dist/` and builds the package into it |
+| `pnpm build` | empties `dist/` and builds the package into `dist/app.busy.weather.tgz` |
+| `pnpm build --emit dir` | leaves the `app.busy.weather/` folder instead of the `.tgz` |
+| `pnpm build --emit both` | leaves the folder and the `.tgz` |
 | `pnpm build --out <path>` | builds into `<path>` instead, replacing only this app's package there |
-| `pnpm build --tgz` | also packs the package into a `.tgz` alongside it |
-| `pnpm build --tgz-only` | packs the `.tgz` and leaves nothing else |
-| `pnpm build --tgz --tgz-name <name>` | names the `.tgz`, e.g. `"{id}-{version}.tgz"` |
+| `pnpm build --tgz-name <name>` | names the `.tgz`, e.g. `"{id}-{version}.tgz"` |
 | `pnpm build --no-minify` | readable output, for debugging |
 | `pnpm build --bundle` | inlines every module into one `main.js` |
 | `pnpm build --addr <host>` | sets the BUSY Bar address the app connects to, `localhost` by default |
 | `pnpm typecheck` | type-checks the app |
-| `pnpm app:install` | installs `dist/app.busy.weather.tgz` on the BUSY Bar; build it first with `pnpm build --tgz` |
+| `pnpm app:install` | installs `dist/app.busy.weather.tgz` on the BUSY Bar; build it first with `pnpm build` |
 | `pnpm app:uninstall` | removes the app from the BUSY Bar, keeping its settings |
 | `pnpm app:run` | launches the installed app |
 | `pnpm app:stop` | quits the running app |
@@ -108,7 +112,7 @@ dist/
     └── images/ animations/ sounds/ resources/
 ```
 
-`--tgz` packs that folder into `dist/app.busy.weather.tgz`, with the folder itself at the root of the archive. `--tgz-name` gives the archive another name; `{id}` and `{version}` in it are replaced with the manifest values.
+By default the build packs that folder into `dist/app.busy.weather.tgz`, with the folder itself at the root of the archive, and removes the folder; `--emit dir` keeps only the folder, `--emit both` keeps both. `--tgz-name` gives the archive another name; `{id}` and `{version}` in it are replaced with the manifest values.
 
 ## Releasing
 
@@ -116,7 +120,7 @@ Pushing a git tag matching the manifest `version` (e.g. `0.1.0`) builds the app 
 
 ## Manifest
 
-`src/appmeta/manifest.json` carries the app's identity and a couple of knobs:
+`src/appmeta/manifest.json` carries the app's identity and a couple of knobs (see the [apps documentation](https://github.com/busy-app/busybar-firmware/blob/dev/documentation/JavaScript%20Applications.dox.md)):
 
 | Field | Description |
 | --- | --- |
@@ -126,7 +130,7 @@ Pushing a git tag matching the manifest `version` (e.g. `0.1.0`) builds the app 
 | `version` | semver, e.g. `1.0.0` — required |
 | `api_version` | minimum BUSY Bar HTTP API version the app needs, e.g. `27.12.0` — required |
 | `description`, `author` | free form, default `""` |
-| `heap_size_kib` | memory for the app heap, 1–256, default 32 |
+| `heap_size_kib` | memory for the app heap, 1–512, default 128 |
 | `debug` | when true, shown only in developer mode, default false |
 
 Raise `heap_size_kib` if the app runs out of memory.
