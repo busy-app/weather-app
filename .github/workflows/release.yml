@@ -52,7 +52,7 @@ jobs:
 
       - run: pnpm typecheck
 
-      - run: pnpm build --tgz --tgz-name "{id}-{version}.tgz"
+      - run: pnpm build --tgz-name "{id}-{version}.tgz"
         env:
           VITE_WEATHER_API: ${{ vars.WEATHER_API }}
 
