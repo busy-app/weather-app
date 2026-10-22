@@ -58,6 +58,9 @@ const LOADING_TEXT = "Loading weather...";
 
 let phase: Phase = { screen: "loading", text: LOADING_TEXT };
 
+/** False until the Wi-Fi state has picked the loader text, so the first frame never shows a text that is about to change. */
+let linkChecked = false;
+
 /** Reads the forecast. Failures leave the last good data on screen. */
 async function refresh(): Promise<void> {
   const place = settings.location;
@@ -200,6 +203,7 @@ function stop() {
 
 /** The loading and error screens need no data; every other one waits for the first forecast. */
 function drawable(): boolean {
+  if (!linkChecked) return false;
   return phase.screen === "loading" || phase.screen === "error" || weather !== undefined;
 }
 
@@ -459,6 +463,12 @@ function main(): void {
 
   // The settings decide which place is asked for and in which scale the readings are drawn, so they come before the first forecast. loadSettings() handles its own failures.
   void (async () => {
+    // Starting on "Loading weather" and switching to "Connecting Wi-Fi" a moment later makes the screen flicker, so the link is asked for before the first frame.
+    const state = await tracked(getWifiState).catch(() => undefined);
+    if (stopped) return;
+
+    phase = { screen: "loading", text: state === "connected" ? LOADING_TEXT : JOINING_TEXT };
+    linkChecked = true;
     paintNow();
 
     settings = await tracked(loadSettings);
