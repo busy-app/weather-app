@@ -54,7 +54,9 @@ let graph: Graph = { bitmap: "", bitmapY: 0, pins: [] };
 /** Read once at startup; a change takes effect when the app is restarted. */
 let settings: Settings = DEFAULTS;
 
-let phase: Phase = { screen: "loading", text: "Loading settings" };
+const LOADING_TEXT = "Loading weather...";
+
+let phase: Phase = { screen: "loading", text: LOADING_TEXT };
 
 /** Reads the forecast. Failures leave the last good data on screen. */
 async function refresh(): Promise<void> {
@@ -300,7 +302,6 @@ function scroll(delta: number): boolean {
 /** How long the first forecast waits before trying again, doubling until the last entry. */
 const RETRY_MS = [3000, 6000, 12000, 24000, 48000, 60000];
 
-const LOADING_TEXT = "Loading weather";
 const JOINING_TEXT = "Connecting Wi-Fi";
 const JOINING_RETRY_MS = 2000;
 const JOINING_WAITS = 5;
