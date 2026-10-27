@@ -7,7 +7,7 @@ import {
   type DayForecast,
   type ForecastHour,
 } from "./api.ts";
-import { buildGraph, HOURS, type Graph } from "./graph.ts";
+import { buildGraph, HOURS, NO_GRAPH, type Graph } from "./graph.ts";
 import { daysScreen } from "./screens/days.ts";
 import { errorScreen, FAILED, OFFLINE, type ErrorText } from "./screens/error.ts";
 import { forecastScreen } from "./screens/forecast.ts";
@@ -49,7 +49,7 @@ let days: DayForecast[] = [];
 let utcOffsetMs = 0;
 let localDay = 0;
 
-let graph: Graph = { bitmap: "", bitmapY: 0, pins: [] };
+let graph: Graph = NO_GRAPH;
 
 /** Read once at startup; a change takes effect when the app is restarted. */
 let settings: Settings = DEFAULTS;
@@ -118,9 +118,7 @@ function updateHours(now: number) {
     temp: fromUnits(Math.round(toUnits(hour.temp))),
   }));
 
-  graph = hours.length > 0
-    ? buildGraph(hours.map((hour) => hour.temp))
-    : { bitmap: "", bitmapY: 0, pins: [] };
+  graph = buildGraph(hours.map((hour) => hour.temp));
   if (phase.screen === "forecast") {
     phase = hours.length > 0
       ? { screen: "forecast", hour: Math.max(0, hours.findIndex((hour) => hour.time === selectedTime)) }
