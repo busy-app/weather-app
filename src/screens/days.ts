@@ -68,7 +68,7 @@ function formatDate(date: string): string {
   const known = dates.get(date);
   if (known !== undefined) return known;
 
-  const at = new Date(`${date}T12:00:00`);
+  const at = new Date(`${date}T12:00:00Z`);
   const text = `${formatDay(at)} ${formatMonth(at)}`;
   
   if (dates.size >= MAX_DATES) {
