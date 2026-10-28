@@ -80,22 +80,24 @@ let labelled: DayForecast[] | undefined;
 let dayLabels: string[] = [];
 let weekdayLabels: string[] = [];
 
-function label(days: DayForecast[]): void {
+function label(days: DayForecast[]) {
   if (labelled === days) return;
 
   dayLabels = [];
   weekdayLabels = [];
+
   for (const day of days) {
     // Noon, so the date reads the same in any timezone the device is set to.
     const at = new Date(`${day.date}T12:00:00`);
     dayLabels.push(formatDay(at));
     weekdayLabels.push(formatWeekday(at));
   }
+
   labelled = days;
 }
 
 /** One half of the day: its name, its condition and its mean temperature. */
-function half(frame: Frame, side: Half, code: number, temp: number, daylight: boolean): void {
+function half(frame: Frame, side: Half, code: number, temp: number, daylight: boolean) {
   frame.text(side.labelId, side.label, "small", side.color, side.x, LABEL_Y);
   frame.image(side.iconId, iconFor(code, daylight), side.x, ICON_Y);
   frame.text(side.tempId, formatTemp(temp, "none"), "small", WHITE, side.x + ICON_W, TEMP_Y);
@@ -107,7 +109,7 @@ function half(frame: Frame, side: Half, code: number, temp: number, daylight: bo
  * @param days every day of the forecast
  * @param at index of the day on show
  */
-export function daysScreen(frame: Frame, days: DayForecast[], at: number): void {
+export function daysScreen(frame: Frame, days: DayForecast[], at: number) {
   label(days);
 
   for (let row = 0; row < ROWS.length; row++) {
