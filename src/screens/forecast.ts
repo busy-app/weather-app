@@ -22,16 +22,9 @@ import { iconFor } from "../wmo.ts";
 /** The icon asset: a 7×7 picture with a clear column and row after it. */
 const ICON = { width: 8, height: 8 };
 
-/** Height of the line above the graph; the picture in the icon sets it. */
 const ROW_H = 7;
-
-/** The graph takes the rest of the screen, below that line. */
 const GRAPH_Y = SCREEN.height - 8;
-
-/** The clock opens the line. */
 const TIME_X = 1;
-
-/** Where the icon stands, unless a wide reading pushes it to the left. */
 const ICON_X = 48;
 
 const WHITE = "#FFFFFFFF";
@@ -52,15 +45,16 @@ function formatHour(hour: number): string {
   return label;
 }
 
-/** One id per strip of the chart, made once; a forecast that needs fewer clears the rest. */
+/** Made once, so a redraw allocates no strings. A forecast with fewer strips leaves the rest to the frame to clear. */
 const STRIP_IDS: string[] = [];
 
-function stripId(index: number): string {
+function stripId(index: number) {
   let id = STRIP_IDS[index];
   if (id === undefined) {
     id = `xpm-graph-${index}`;
     STRIP_IDS[index] = id;
   }
+
   return id;
 }
 
@@ -71,7 +65,7 @@ function stripId(index: number): string {
  * @param graph the chart and the pin position for each hour
  * @param at index into `hours` of the one the pin sits on
  */
-export function forecastScreen(frame: Frame, hours: ForecastHour[], graph: Graph, at: number): void {
+export function forecastScreen(frame: Frame, hours: ForecastHour[], graph: Graph, at: number) {
   const current = hours[at]!;
   const pin = graph.pins[at]!;
 

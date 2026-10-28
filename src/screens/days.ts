@@ -6,9 +6,8 @@
 //   │ 11 Wed                 │
 //   └────────────────────────┘
 //
-// The dates run down the left edge, the day on show in the middle and its neighbours dimmed and
-// cut off by the screen's edges. Turning the encoder moves the day under the middle row: the rows
-// stay where they are and only their texts change.
+// Turning the encoder leaves the rows where they are and changes only their texts, so a step
+// sends the texts that changed and nothing else.
 
 import { formatDay, formatWeekday } from "@shared/datetime";
 import type { DayForecast } from "../api.ts";
@@ -17,15 +16,12 @@ import { textWidth } from "../font.ts";
 import { formatTemp } from "../temp.ts";
 import { iconFor } from "../wmo.ts";
 
-/** Lines of the date column: the day on show, and the one above and below it. */
 const ROW_Y = 3;
 const ROW_STEP = 7;
 
-/** The day of the month is set flush right against this column; the weekday starts after it. */
 const DAY_RIGHT = 8;
 const WEEKDAY_X = 9;
 
-/** The daylight and the night halves, each a label over an icon and a reading. */
 const DAY_X = 28;
 const NIGHT_X = 50;
 const LABEL_Y = -1;
@@ -40,7 +36,6 @@ const DIM = "#808080FF";
 const DAY_COLOR = "#FFBA0EFF";
 const NIGHT_COLOR = "#5098F3FF";
 
-/** Ids of the date rows, top to bottom: the day of the month and the weekday. */
 const ROWS = [
   { day: "text-a", weekday: "text-b" },
   { day: "text-c", weekday: "text-d" },
@@ -96,7 +91,6 @@ function label(days: DayForecast[]) {
   labelled = days;
 }
 
-/** One half of the day: its name, its condition and its mean temperature. */
 function half(frame: Frame, side: Half, code: number, temp: number, daylight: boolean) {
   frame.text(side.labelId, side.label, "small", side.color, side.x, LABEL_Y);
   frame.image(side.iconId, iconFor(code, daylight), side.x, ICON_Y);

@@ -119,6 +119,7 @@ function updateHours(now: number) {
   }));
 
   graph = buildGraph(hours.map((hour) => hour.temp));
+
   if (phase.screen === "forecast") {
     phase = hours.length > 0
       ? { screen: "forecast", hour: Math.max(0, hours.findIndex((hour) => hour.time === selectedTime)) }
