@@ -19,18 +19,18 @@ import { center, SCREEN } from "../screen.ts";
 import { formatTemp } from "../temp.ts";
 import { iconFor } from "../wmo.ts";
 
-/** The icon asset: a 7×7 picture with a clear column and row after it. */
-const ICON = { width: 8, height: 8 };
+const ICON_W = 7;
 
 const ROW_H = 7;
 const GRAPH_Y = SCREEN.height - 8;
 const TIME_X = 1;
-const ICON_X = 48;
+const ICON_GAP = 2;
 
 const WHITE = "#FFFFFFFF";
 /** The clock is dimmed: it labels the hour rather than telling the time. */
 const DIM = "#808080FF";
 
+const GRAPH_Z = 10;
 const PIN_Z = 60;
 
 /** "12:00" for an hour, built once per hour of the day. */
@@ -74,17 +74,15 @@ export function forecastScreen(frame: Frame, hours: ForecastHour[], graph: Graph
   const temp = formatTemp(current.temp, "degree");
   const tempBox = textBox(temp, "small");
 
-  // The reading is held against the right edge; the icon goes before it, moving left only when a
-  // wide one, "+104°", would run into it.
   const tempX = GRAPH_W - textWidth(temp, "small");
 
   frame.text("text-sub", time, "small", DIM, TIME_X, center(timeBox.height, ROW_H) - timeBox.top);
-  frame.image("image-icon", iconFor(current.code, current.daylight), Math.min(ICON_X, tempX - ICON.width), 0);
+  frame.image("image-icon", iconFor(current.code, current.daylight), tempX - ICON_GAP - ICON_W, 0);
   frame.text("text-temp", temp, "small", WHITE, tempX, center(tempBox.height, ROW_H) - tempBox.top);
 
   for (let i = 0; i < graph.strips.length; i++) {
     const strip = graph.strips[i]!;
-    frame.xpm(stripId(i), strip.data, strip.x, GRAPH_Y + strip.y);
+    frame.xpm(stripId(i), strip.data, strip.x, GRAPH_Y + strip.y, GRAPH_Z);
   }
 
   frame.image("pin", "images/pin.png", pin.x, GRAPH_Y + pin.y, PIN_Z);

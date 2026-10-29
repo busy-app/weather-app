@@ -4,6 +4,7 @@
 // holds several times that. Rather than merge its colours, the chart is cut into vertical strips
 // that each fit.
 
+import { toUnits } from "./temp.ts";
 import { colorScale, mix, paintedAs, paletteColor } from "./tempColor.ts";
 import { xpm2 } from "./xpm2.ts";
 
@@ -74,14 +75,16 @@ export function buildGraph(temps: readonly number[]): Graph {
     if (temp > max) max = temp;
   }
 
-  const span = max - min;
   const scale = colorScale(min, max);
   const colors: number[] = [];
+
+  const lowest = Math.round(toUnits(min));
+  const degrees = Math.max(Math.round(toUnits(max)) - lowest, MAX_H - MIN_H);
 
   for (let hour = 0; hour < count; hour++) {
     const temp = temps[hour]!;
     colors.push(paletteColor(paintedAs(temp, scale)));
-    tops[hour] = GRAPH_H - (span === 0 ? MAX_H : Math.round(MIN_H + ((temp - min) / span) * (MAX_H - MIN_H)));
+    tops[hour] = GRAPH_H - Math.round(MIN_H + ((Math.round(toUnits(temp)) - lowest) / degrees) * (MAX_H - MIN_H));
   }
 
   const columns = count * BAR_W;

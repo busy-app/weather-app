@@ -16,10 +16,9 @@ const WARMEST = COLDEST + STEP * (PALETTE.length - 1);
 const NARROW = 10;
 const NARROW_SHIFT = 5;
 
-// The spec does not say from what temperature a day is hot or frosty: ±30 is our choice.
 const HEAT = 30;
 const HEAT_FLOOR = 15;
-const FROST = -30;
+const FROST = -20;
 const FROST_CEILING = -5;
 
 export function paletteColor(celsius: number) {
