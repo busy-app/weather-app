@@ -7,7 +7,7 @@ import {
   type DayForecast,
   type ForecastHour,
 } from "./api.ts";
-import { buildGraph, HOURS, NO_GRAPH, type Graph } from "./graph.ts";
+import { buildGraph, HOURS, type Graph } from "./graph.ts";
 import { daysScreen } from "./screens/days.ts";
 import { errorScreen, FAILED, OFFLINE, type ErrorText } from "./screens/error.ts";
 import { forecastScreen } from "./screens/forecast.ts";
@@ -49,7 +49,7 @@ let days: DayForecast[] = [];
 let utcOffsetMs = 0;
 let localDay = 0;
 
-let graph: Graph = NO_GRAPH;
+let graph: Graph | undefined;
 
 /** Read once at startup; a change takes effect when the app is restarted. */
 let settings: Settings = DEFAULTS;
@@ -118,7 +118,7 @@ function updateHours(now: number) {
     temp: fromUnits(Math.round(toUnits(hour.temp))),
   }));
 
-  graph = buildGraph(hours.map((hour) => hour.temp));
+  graph = undefined;
 
   if (phase.screen === "forecast") {
     phase = hours.length > 0
@@ -237,6 +237,9 @@ function paintNow(): void {
       date: settings.showDate,
     });
   } else if (phase.screen === "forecast") {
+    if (graph === undefined) {
+      graph = buildGraph(hours.map((hour) => hour.temp));
+    }
     forecastScreen(frame, hours, graph, phase.hour);
   } else {
     daysScreen(frame, days, phase.day);
