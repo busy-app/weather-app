@@ -1,147 +1,101 @@
 // The multi-day screen: one day at a time, split into daylight and night.
 //
 //   ┌────────────────────────┐
-//   │ DAY   ☀ +23   23 May   │
-//   │ NIGHT ☾ +20   24 May   │
+//   │  9 Mon  DAY    NIGHT   │
+//   │ 10 Tue  ☀ +23  ☾ +20   │
+//   │ 11 Wed                 │
 //   └────────────────────────┘
+//
+// Turning the encoder leaves the rows where they are and changes only their texts, so a step
+// sends the texts that changed and nothing else.
 
-import { formatDay, formatMonth } from "@shared/datetime";
+import { formatDay, formatWeekday } from "@shared/datetime";
 import type { DayForecast } from "../api.ts";
 import type { Frame } from "../frame.ts";
-import { textBox } from "../font.ts";
-import { createList } from "../list.ts";
-import { center, SCREEN } from "../screen.ts";
+import { textWidth } from "../font.ts";
 import { formatTemp } from "../temp.ts";
 import { iconFor } from "../wmo.ts";
 
-const ICON = { width: 7, height: 7 };
+const ROW_Y = 3;
+const ROW_STEP = 7;
 
-/** Space between a label and its icon. */
-const GAP = 1;
+const DAY_RIGHT = 8;
+const WEEKDAY_X = 9;
 
-/** Space between an icon and its reading. */
-const TEMP_GAP = 2;
+const DAY_X = 28;
+const NIGHT_X = 50;
+const LABEL_Y = -1;
+const ICON_Y = 8;
+const TEMP_Y = 7;
 
-/** Width of "NIGHT", so both rows line up. */
-const LABEL_W = 21;
-
-const DAY_COLOR = "#F5A623FF";
-const NIGHT_COLOR = "#4A90D9FF";
-
-const PANEL_W = 47;
-const PANEL_COLOR = "#0A1A4AFF";
-
-/** Redrawing one element alone leaves the panel on top of it unless the order is spelled out. */
-const PANEL_Z = 10;
-const CONTENT_Z = 50;
+/** Space the icon takes before the reading: a 7×7 picture and a clear column. */
+const ICON_W = 8;
 
 const WHITE = "#FFFFFFFF";
 const DIM = "#808080FF";
+const DAY_COLOR = "#FFBA0EFF";
+const NIGHT_COLOR = "#5098F3FF";
 
-/** The height of one half-row; the icon sets it. */
-const ROW_H = ICON.height;
+const ROWS = [
+  { day: "text-a", weekday: "text-b" },
+  { day: "text-c", weekday: "text-d" },
+  { day: "text-e", weekday: "text-f" },
+] as const;
 
-/** The second half-row starts here, against the bottom of the screen. */
-const NIGHT_Y = SCREEN.height - ROW_H;
-
-/** The icon and reading sit after the label. */
-const ICON_X = LABEL_W + GAP;
-const TEMP_X = ICON_X + ICON.width + TEMP_GAP;
-
-const LIST_W = SCREEN.width - PANEL_W - 1;
-
-/** Clear space between the dates and the scrollbar. */
-const DATE_GAP = 2;
-
-const BAR_W = 1;
-const TRACK_COLOR = "#404040FF";
-const THUMB_COLOR = "#FFFFFFFF";
-
-/** The dates as they are drawn, by ISO date. */
-const dates = new Map<string, string>();
-
-/** A new day joins every day the app runs, so the old ones are let go past a fortnight's worth. */
-const MAX_DATES = 14;
-
-/** "23 May" */
-function formatDate(date: string): string {
-  const known = dates.get(date);
-  if (known !== undefined) return known;
-
-  const at = new Date(`${date}T12:00:00Z`);
-  const text = `${formatDay(at)} ${formatMonth(at)}`;
-  
-  if (dates.size >= MAX_DATES) {
-    dates.clear();
-  }
-  
-  dates.set(date, text);
-  return text;
-}
-
-interface Slot {
+interface Half {
   label: string;
-  icon: string;
-  temp: string;
+  color: string;
+  x: number;
+  /** Ids shared with the other screens, so moving between them redraws an element instead of replacing it. */
+  labelId: string;
+  iconId: string;
+  tempId: string;
 }
 
-/** Ids shared with the other screens, so moving between them redraws an element instead of replacing it. */
-const DAY_SLOT: Slot = { label: "text-a", icon: "image-icon", temp: "text-temp" };
-const NIGHT_SLOT: Slot = { label: "text-b", icon: "image-icon2", temp: "text-sub" };
+const DAYLIGHT: Half = {
+  label: "DAY",
+  color: DAY_COLOR,
+  x: DAY_X,
+  labelId: "text-day",
+  iconId: "image-icon",
+  tempId: "text-temp",
+};
 
-const dateList = createList({
-  id: "list",
-  x: PANEL_W + 1,
-  y: 0,
-  width: LIST_W,
-  height: SCREEN.height,
-  font: "small",
-  gap: DATE_GAP,
-  color: DIM,
-  activeColor: WHITE,
-  scrollbar: "right",
-  trackColor: TRACK_COLOR,
-  thumbColor: THUMB_COLOR,
-  scrollbarGap: 1,
-  scrollbarWidth: BAR_W,
-  z_index: CONTENT_Z,
-});
+const NIGHT: Half = {
+  label: "NIGHT",
+  color: NIGHT_COLOR,
+  x: NIGHT_X,
+  labelId: "text-night",
+  iconId: "image-icon2",
+  tempId: "text-sub",
+};
 
-/** The labels for the forecast on show; rebuilt only when a new forecast arrives. */
+/** The date labels for the forecast on show; rebuilt only when a new forecast arrives. */
 let labelled: DayForecast[] | undefined;
-let labels: string[] = [];
+let dayLabels: string[] = [];
+let weekdayLabels: string[] = [];
 
-/**
- * One half of the day: its name, its condition and its mean temperature.
- *
- * @param slot - Which element ids this half draws under.
- * @param y - Where the half-row starts.
- */
-function half(
-  frame: Frame,
-  slot: Slot,
-  label: string,
-  color: string,
-  code: number,
-  temp: number,
-  y: number,
-  daylight: boolean,
-): void {
-  const labelBox = textBox(label, "small");
-  const reading = formatTemp(temp, "none");
-  const readingBox = textBox(reading, "small");
+function label(days: DayForecast[]) {
+  if (labelled === days) return;
 
-  frame.text(slot.label, label, "small", color, 0, y + center(labelBox.height, ROW_H) - labelBox.top, CONTENT_Z);
-  frame.image(slot.icon, iconFor(code, daylight), ICON_X, y, CONTENT_Z);
-  frame.text(
-    slot.temp,
-    reading,
-    "small",
-    WHITE,
-    TEMP_X,
-    y + center(readingBox.height, ROW_H) - readingBox.top,
-    CONTENT_Z,
-  );
+  dayLabels = [];
+  weekdayLabels = [];
+
+  for (const day of days) {
+    // UTC noon, read back with the UTC getters of `@shared/datetime`, so the date is the same in
+    // any timezone the device is set to.
+    const at = new Date(`${day.date}T12:00:00Z`);
+    dayLabels.push(formatDay(at));
+    weekdayLabels.push(formatWeekday(at));
+  }
+
+  labelled = days;
+}
+
+function half(frame: Frame, side: Half, code: number, temp: number, daylight: boolean) {
+  frame.text(side.labelId, side.label, "small", side.color, side.x, LABEL_Y);
+  frame.image(side.iconId, iconFor(code, daylight), side.x, ICON_Y);
+  frame.text(side.tempId, formatTemp(temp, "none"), "small", WHITE, side.x + ICON_W, TEMP_Y);
 }
 
 /**
@@ -150,16 +104,24 @@ function half(
  * @param days every day of the forecast
  * @param at index of the day on show
  */
-export function daysScreen(frame: Frame, days: DayForecast[], at: number): void {
-  if (labelled !== days) {
-    labels = days.map((day) => formatDate(day.date));
-    labelled = days;
+export function daysScreen(frame: Frame, days: DayForecast[], at: number) {
+  label(days);
+
+  for (let row = 0; row < ROWS.length; row++) {
+    const index = at + row - 1;
+    // Past either end of the forecast the row is left empty, and its elements are cleared.
+    if (index < 0 || index >= days.length) continue;
+
+    const ids = ROWS[row]!;
+    const color = index === at ? WHITE : DIM;
+    const y = ROW_Y + (row - 1) * ROW_STEP;
+    const day = dayLabels[index]!;
+
+    frame.text(ids.day, day, "small", color, DAY_RIGHT - textWidth(day, "small"), y);
+    frame.text(ids.weekday, weekdayLabels[index]!, "small", color, WEEKDAY_X, y);
   }
 
   const current = days[at]!;
-
-  frame.rectangle("rect-panel", 0, 0, PANEL_W, SCREEN.height, PANEL_COLOR, PANEL_Z);
-  half(frame, DAY_SLOT, "DAY", DAY_COLOR, current.dayCode, current.day, 0, true);
-  half(frame, NIGHT_SLOT, "NIGHT", NIGHT_COLOR, current.nightCode, current.night, NIGHT_Y, false);
-  dateList.draw(frame, labels, at);
+  half(frame, DAYLIGHT, current.dayCode, current.day, true);
+  half(frame, NIGHT, current.nightCode, current.night, false);
 }

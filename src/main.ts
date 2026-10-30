@@ -8,7 +8,7 @@ import {
   type DayForecast,
   type ForecastHour,
 } from "./api.ts";
-import { buildGraph, HOURS, type Graph } from "./graph.ts";
+import { buildGraph, HOURS, NO_GRAPH, type Graph } from "./graph.ts";
 import { daysScreen } from "./screens/days.ts";
 import { errorScreen, FAILED, OFFLINE, type ErrorText } from "./screens/error.ts";
 import { forecastScreen } from "./screens/forecast.ts";
@@ -50,7 +50,7 @@ let days: DayForecast[] = [];
 let utcOffsetMs = 0;
 let localDay = 0;
 
-let graph: Graph = { bitmap: "", bitmapY: 0, pins: [] };
+let graph: Graph = NO_GRAPH;
 
 /** Read once at startup; a change takes effect when the app is restarted. */
 let settings: Settings = DEFAULTS;
@@ -105,13 +105,18 @@ function updateDays(now: number, selectedDate: string | undefined) {
   }
 }
 
-function updateHours(now: number) {
-  const selectedTime = phase.screen === "forecast" ? hours[phase.hour]?.time : undefined;
-
+function windowStart(now: number) {
   let first = 0;
   while (first < forecastHours.length && forecastHours[first]!.time + HOUR_MS <= now) {
     first++;
   }
+
+  return first;
+}
+
+function updateHours(now: number) {
+  const selectedTime = phase.screen === "forecast" ? hours[phase.hour]?.time : undefined;
+  const first = windowStart(now);
 
   // One rounding for both, so bar heights and readings agree.
   hours = forecastHours.slice(first, first + HOURS).map((hour) => ({
@@ -119,9 +124,8 @@ function updateHours(now: number) {
     temp: fromUnits(Math.round(toUnits(hour.temp))),
   }));
 
-  graph = hours.length > 0
-    ? buildGraph(hours.map((hour) => hour.temp))
-    : { bitmap: "", bitmapY: 0, pins: [] };
+  graph = buildGraph(hours.map((hour) => hour.temp));
+
   if (phase.screen === "forecast") {
     phase = hours.length > 0
       ? { screen: "forecast", hour: Math.max(0, hours.findIndex((hour) => hour.time === selectedTime)) }
@@ -317,6 +321,8 @@ const SETTLE_ATTEMPTS = 3;
 let joining = false;
 let settleAttempts = 0;
 
+let fetchingHour = false;
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
     endWait = resolve;
@@ -326,6 +332,22 @@ function wait(ms: number): Promise<void> {
       resolve();
     }, ms);
   });
+}
+
+
+async function nextHour() {
+  fetchingHour = true;
+
+  try {
+    await refresh();
+  } catch (err) {
+    console.error(`${APP}: ${err instanceof Error ? err.message : String(err)}`);
+    updateHours(Date.now());
+  } finally {
+    fetchingHour = false;
+  }
+
+  paintNow();
 }
 
 function scheduleClock() {
@@ -348,8 +370,12 @@ function scheduleClock() {
       }
 
       if (hours.length > 0 && hours[0]!.time + HOUR_MS <= now) {
-        updateHours(now);
-        paintNow();
+        if (forecastHours.length - windowStart(now) >= HOURS) {
+          updateHours(now);
+          paintNow();
+        } else if (!fetchingHour) {
+          nextHour();
+        }
       } else if (redrawForDay || (settings.showTime && phase.screen === "weather")) {
         paintNow();
       }

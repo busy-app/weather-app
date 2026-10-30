@@ -21,7 +21,7 @@ const ANIMATION = { width: 16, height: 16 };
 const GAP = 3;
 
 const WHITE = "#FFFFFFFF";
-const DIM = "#AAAAAAFF";
+const DIM = "#808080FF";
 
 const TEMP_DY = 1;
 

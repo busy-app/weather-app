@@ -195,13 +195,14 @@ export class Frame {
     this.changed.push(element);
   }
 
-  xpm(id: string, data: string, x: number, y: number): void {
+  xpm(id: string, data: string, x: number, y: number, z_index?: number): void {
     const element = this.element<XpmBitmapElement>(id, "xpmbitmap");
-    if (element.data === data && element.x === x && element.y === y) return;
+    if (element.data === data && element.x === x && element.y === y && element.z_index === z_index) return;
 
     element.data = data;
     element.x = x;
     element.y = y;
+    element.z_index = z_index;
     this.changed.push(element);
   }
 
