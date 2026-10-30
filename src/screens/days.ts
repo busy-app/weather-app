@@ -82,8 +82,6 @@ function label(days: DayForecast[]) {
   weekdayLabels = [];
 
   for (const day of days) {
-    // UTC noon, read back with the UTC getters of `@shared/datetime`, so the date is the same in
-    // any timezone the device is set to.
     const at = new Date(`${day.date}T12:00:00Z`);
     dayLabels.push(formatDay(at));
     weekdayLabels.push(formatWeekday(at));
