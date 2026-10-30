@@ -1,194 +1,255 @@
-// The hourly forecast as an XPM2 bitmap: one hour per 3-pixel bar.
+// The hourly forecast as XPM2 bitmaps: one hour per 3-pixel bar.
 //
-// The tops of the bars are one curve rather than a step per hour, and each column also lights the
-// pixel the curve cuts through, held back to how much of it the curve covers.
+// The device takes at most 32 colours in a bitmap, the transparent one included, and the chart
+// holds several times that. Rather than merge its colours, the chart is cut into vertical strips
+// that each fit.
 
-import { tempChannels } from "./tempColor.ts";
-import { quantize } from "./quantize.ts";
+import { toUnits } from "./temp.ts";
+import { colorScale, mix, paintedAs, paletteColor } from "./tempColor.ts";
+import { xpm2 } from "./xpm2.ts";
 
 export const HOURS = 24;
 export const BAR_W = 3;
 export const GRAPH_W = HOURS * BAR_W;
-export const GRAPH_H = 9;
+export const GRAPH_H = 8;
 
-/**
- * How far the pin rises above the topmost lit row of the bar it marks. `images/pin.png` is 3 wide
- * and 9 tall: a 3×3 head over a 1-pixel needle, and the head's middle row sits on the bar's top.
- *
- * Any higher and the tallest bar's pin comes within a pixel of the reading above the graph.
- */
+const MIN_H = 3;
+const MAX_H = 8;
+
+// XPM has no partial transparency, so the spec's 80% fill is baked into the colour over the black
+// screen.
+const FILL = 0.8;
+
+// The spec's white at 50% in plus-lighter mode: added to the colour, not blended with it.
+const GLOW = 0x808080;
+
+const SOFTEN = 0.4;
+
+// `images/pin.png` is 3 wide and 9 tall: a 3×3 head over a 1-pixel needle, and the head's middle
+// row sits on the bar's top row.
 const HEAD_RISE = 1;
 
-/** A bar's height, in pixels, for the coldest and the warmest hour of the day. */
-const MIN_H = 2;
-const MAX_H = 7;
+const MAX_COLORS = 31;
 
-/** The outline is placed on eighths of a pixel, and its cut-through pixel held back to the
- * coverage the curve gives it. */
-const OUTLINE_STEPS = 8;
-
-/** The bottom row of the chart, which every bar reaches. */
-const BOTTOM = GRAPH_H - 1;
-
-/** How bright a bar is at the pixel the outline cuts through, and at the bottom of the chart. */
-const TOP_LIGHT = 255;
-const FOOT_LIGHT = 215;
+const SYMBOLS = "0123456789abcdefghijklmnopqrstuvwxyz";
+const EMPTY = ".";
+const NONE = -1;
 
 // Scratch for one chart at a time, kept between builds rather than allocated on every forecast.
-const solid = new Int32Array(GRAPH_W);
-const cut = new Int32Array(GRAPH_W);
 const pixels = new Int32Array(GRAPH_W * GRAPH_H);
+const fill = new Int32Array(GRAPH_W);
+const tops = new Int32Array(HOURS);
 
-/** Where the pin's top-left corner sits for one hour. */
 export interface Pin {
   readonly x: number;
   readonly y: number;
 }
 
-/**
- * The graph as it is drawn: one bitmap, and where the pin goes on each hour, built once per
- * forecast. The bitmap carries only the rows the chart uses, because the device composites a whole
- * rectangle every refresh it draws, ink or no ink.
- */
+export interface Strip {
+  readonly x: number;
+  readonly y: number;
+  readonly data: string;
+}
+
 export interface Graph {
-  /** The chart's pixels, one line per row, the first of them drawn on row `bitmapY` of the chart. */
-  readonly bitmap: string;
-  /** The chart row the first line of `bitmap` belongs on. */
-  readonly bitmapY: number;
-  /** The pin position for each hour, indexed as `temps` is. */
+  readonly strips: readonly Strip[];
   readonly pins: readonly Pin[];
 }
 
-/** Builds everything the forecast screen draws from the temperatures alone. */
-export function buildGraph(temps: number[]): Graph {
-  const hours = temps.slice(0, HOURS);
-  if (hours.length === 0) return { bitmap: "", bitmapY: 0, pins: [] };
+export const NO_GRAPH: Graph = { strips: [], pins: [] };
 
-  const { min, max } = span(hours);
-  const width = max - min;
-  const heights = hours.map((temp) => heightOf(temp, min, width));
+// A refresh that brings the same readings builds nothing.
+let built: Graph = NO_GRAPH;
+const builtFrom: number[] = [];
 
-  return draw(hours, outline(heights, OUTLINE_STEPS), OUTLINE_STEPS);
-}
+export function buildGraph(temps: readonly number[]): Graph {
+  const count = Math.min(temps.length, HOURS);
+  if (count === 0) return NO_GRAPH;
+  if (sameAsBuilt(temps, count)) return built;
 
-/** The day's coldest and warmest hour. */
-function span(temps: number[]): { min: number; max: number } {
   let min = temps[0]!;
   let max = temps[0]!;
-  for (const t of temps) {
-    if (t < min) min = t;
-    if (t > max) max = t;
-  }
-  return { min, max };
-}
-
-/** A bar's height in pixels for one hour. */
-function heightOf(temp: number, min: number, width: number): number {
-  return width === 0 ? MAX_H : MIN_H + ((temp - min) / width) * (MAX_H - MIN_H);
-}
-
-/** The top of the chart, column by column, counted in `resolution`ths of a pixel. */
-function outline(heights: number[], resolution: number): number[] {
-  const tops = heights.map((height) => GRAPH_H - height);
-  const columns = tops.length * BAR_W;
-  const placed: number[] = [];
-
-  for (let x = 0; x < columns; x++) {
-    placed.push(Math.round(topAt(tops, (x + 0.5) / BAR_W - 0.5) * resolution));
+  for (let hour = 1; hour < count; hour++) {
+    const temp = temps[hour]!;
+    if (temp < min) min = temp;
+    if (temp > max) max = temp;
   }
 
-  return placed;
-}
+  const scale = colorScale(min, max);
+  const colors: number[] = [];
 
-/** The graph as one plan draws it: rasterised into pixels, then handed to `quantize`. */
-function draw(hours: number[], placed: number[], resolution: number): Graph {
-  const columns = placed.length;
-  const colors = hours.map((temp) => tempChannels(temp));
-  let top = BOTTOM;
+  const lowest = Math.round(toUnits(min));
+  const degrees = Math.max(Math.round(toUnits(max)) - lowest, MAX_H - MIN_H);
 
-  // Each column's own two rows: where its bar starts, and the pixel above that which the outline
-  // cuts through.
-  for (let x = 0; x < columns; x++) {
-    const at = placed[x]!;
-    solid[x] = Math.ceil(at / resolution);
-    cut[x] = Math.floor(at / resolution);
-    if (cut[x]! < top) top = cut[x]!;
+  for (let hour = 0; hour < count; hour++) {
+    const temp = temps[hour]!;
+    colors.push(paletteColor(paintedAs(temp, scale)));
+    tops[hour] = GRAPH_H - Math.round(MIN_H + ((Math.round(toUnits(temp)) - lowest) / degrees) * (MAX_H - MIN_H));
   }
 
-  const rows = GRAPH_H - top;
-  pixels.fill(-1, 0, rows * columns);
+  const columns = count * BAR_W;
+  paint(colors, count, columns);
+
+  const pins: Pin[] = [];
+  for (let hour = 0; hour < count; hour++) {
+    pins.push({ x: hour * BAR_W, y: tops[hour]! - HEAD_RISE });
+  }
+
+  built = { strips: cut(columns), pins };
+
+  builtFrom.length = 0;
+  for (let hour = 0; hour < count; hour++) builtFrom.push(temps[hour]!);
+
+  return built;
+}
+
+function sameAsBuilt(temps: readonly number[], count: number) {
+  if (builtFrom.length !== count) return false;
+
+  for (let hour = 0; hour < count; hour++) {
+    if (builtFrom[hour] !== temps[hour]) return false;
+  }
+
+  return true;
+}
+
+function paint(colors: number[], count: number, columns: number) {
+  pixels.fill(NONE);
 
   for (let x = 0; x < columns; x++) {
-    const color = colors[Math.floor(x / BAR_W)]!;
-    const from = cut[x]!;
+    // Each hour's own colour sits on the middle column of its bar; the columns between mix the two.
+    const at = (x - 1) / BAR_W;
+    const hour = Math.floor(x / BAR_W);
+    const from = Math.min(Math.max(Math.floor(at), 0), Math.max(count - 2, 0));
+    const part = Math.min(Math.max(at - from, 0), 1);
+    const color = count < 2 ? colors[0]! : mix(colors[from]!, colors[from + 1]!, part);
 
-    // The pixel the outline cuts through: the hour's colour held back to the coverage it gets.
-    const covers = 1 - (placed[x]! % resolution) / resolution;
-    pixels[(from - top) * columns + x] = shade(color, (covers * TOP_LIGHT) / 255);
+    fill[x] = scaled(color, FILL);
 
-    // The bar below it, shaded from its top down to the foot of the chart.
-    const drop = from < BOTTOM ? (TOP_LIGHT - FOOT_LIGHT) / (BOTTOM - from) : 0;
-    for (let y = solid[x]!; y <= BOTTOM; y++) {
-      pixels[(y - top) * columns + x] = shade(color, (TOP_LIGHT - (y - from) * drop) / 255);
+    const top = tops[hour]!;
+    pixels[top * GRAPH_W + x] = added(fill[x]!, GLOW);
+    for (let y = top + 1; y < GRAPH_H; y++) {
+      pixels[y * GRAPH_W + x] = fill[x]!;
     }
   }
 
-  return {
-    bitmap: quantize(pixels, columns, rows),
-    bitmapY: top,
-    pins: pinsFor(placed, resolution),
-  };
-}
+  for (let hour = 0; hour + 1 < count; hour++) {
+    const left = tops[hour]!;
+    const right = tops[hour + 1]!;
+    if (left === right) continue;
 
-/** One pixel's colour, held back to `lit` of its strength. */
-function shade(color: readonly [number, number, number], lit: number): number {
-  return (Math.round(color[0] * lit) << 16) | (Math.round(color[1] * lit) << 8) | Math.round(color[2] * lit);
-}
+    const lowX = left > right ? hour * BAR_W + BAR_W - 1 : (hour + 1) * BAR_W;
+    const highX = left > right ? lowX + 1 : lowX - 1;
+    const lowTop = Math.max(left, right);
+    const highTop = Math.min(left, right);
 
-/** The pin's corner for each hour: its head across the topmost lit row of the bar it marks. */
-function pinsFor(placed: number[], resolution: number): Pin[] {
-  const pins: Pin[] = [];
+    // The spec's step smoothing, its first pixel: on the black above the low bar.
+    pixels[(lowTop - 1) * GRAPH_W + lowX] = scaled(pixels[highTop * GRAPH_W + highX]!, SOFTEN);
 
-  for (let hour = 0; hour < placed.length / BAR_W; hour++) {
-    // The pin is three wide, so its needle runs down the middle column of the bar.
-    const top = Math.floor(placed[hour * BAR_W + 1]! / resolution);
-    pins.push({ x: hour * BAR_W, y: top - HEAD_RISE });
+    // The spec's "vertical fill" on peaks: a step of more than a pixel bares the high bar's side,
+    // and it glows like a top row.
+    for (let y = highTop + 1; y < lowTop; y++) {
+      pixels[y * GRAPH_W + highX] = added(fill[highX]!, GLOW);
+    }
+
+    // The step smoothing's second pixel: on the high bar, level with the low bar's top.
+    pixels[lowTop * GRAPH_W + highX] = added(fill[highX]!, scaled(pixels[lowTop * GRAPH_W + lowX]!, SOFTEN));
   }
 
-  return pins;
+  // Transparent rather than the spec's #000000: the screen is black anyway, and it saves a colour.
+  pixels[(GRAPH_H - 1) * GRAPH_W] = NONE;
+  pixels[(GRAPH_H - 1) * GRAPH_W + columns - 1] = NONE;
 }
 
-/**
- * The top of the chart at one column, interpolated between the hours around it.
- *
- * The curve passes exactly through each hour's own top — the middle column of its three — so the
- * pin still lands on the hour it marks.
- *
- * It never leaves the two hours it runs between: a cubic drawn through a step can climb above the
- * higher reading, and having climbed it must come back down, drawing a peak on a slope that only
- * ever fell. Held between the two, a monotone day stays monotone.
- */
-function topAt(tops: number[], at: number): number {
-  const last = tops.length - 1;
-  if (last < 1) return tops[0]!;
+function cut(columns: number) {
+  const strips: Strip[] = [];
+  const palette: number[] = [];
+  let start = 0;
 
-  const from = Math.min(Math.max(Math.floor(at), 0), last - 1);
-  const part = Math.min(Math.max(at - from, 0), 1);
+  for (let x = 0; x < columns; x++) {
+    if (palette.length + newColors(x, palette) > MAX_COLORS) {
+      strips.push(strip(start, x, palette));
+      palette.length = 0;
+      start = x;
+    }
 
-  const before = tops[Math.max(from - 1, 0)]!;
-  const here = tops[from]!;
-  const next = tops[from + 1]!;
-  const after = tops[Math.min(from + 2, last)]!;
+    for (let y = 0; y < GRAPH_H; y++) {
+      const color = pixels[y * GRAPH_W + x]!;
+      if (color !== NONE && palette.indexOf(color) === -1) palette.push(color);
+    }
+  }
 
-  // Catmull-Rom: a cubic through `here` and `next`, bent by the hours either side of them.
-  const part2 = part * part;
-  const part3 = part2 * part;
-  const value =
-    0.5 *
-    (2 * here +
-      (next - before) * part +
-      (2 * before - 5 * here + 4 * next - after) * part2 +
-      (3 * here - before - 3 * next + after) * part3);
+  strips.push(strip(start, columns, palette));
 
-  return Math.min(Math.max(value, Math.min(here, next)), Math.max(here, next));
+  return strips;
+}
+
+function newColors(x: number, palette: number[]) {
+  let count = 0;
+
+  for (let y = 0; y < GRAPH_H; y++) {
+    const color = pixels[y * GRAPH_W + x]!;
+    if (color === NONE || palette.indexOf(color) !== -1) continue;
+
+    let countedAbove = false;
+    for (let above = 0; above < y; above++) {
+      if (pixels[above * GRAPH_W + x] === color) {
+        countedAbove = true;
+        break;
+      }
+    }
+
+    if (!countedAbove) count++;
+  }
+
+  return count;
+}
+
+// Cropped to its own tallest bar, so a low strip sends fewer rows.
+function strip(from: number, to: number, palette: number[]): Strip {
+  let top = GRAPH_H - 1;
+  for (let x = from; x < to; x++) {
+    for (let y = 0; y < top; y++) {
+      if (pixels[y * GRAPH_W + x] !== NONE) {
+        top = y;
+        break;
+      }
+    }
+  }
+
+  const colors: [string, string][] = [[EMPTY, "None"]];
+  for (let i = 0; i < palette.length; i++) colors.push([SYMBOLS.charAt(i), hex(palette[i]!)]);
+
+  const rows: string[] = [];
+  for (let y = top; y < GRAPH_H; y++) {
+    let row = "";
+    for (let x = from; x < to; x++) {
+      const color = pixels[y * GRAPH_W + x]!;
+      row += color === NONE ? EMPTY : SYMBOLS.charAt(palette.indexOf(color));
+    }
+
+    rows.push(row);
+  }
+
+  return { x: from, y: top, data: xpm2(colors, rows) };
+}
+
+function scaled(color: number, share: number) {
+  return (
+    (Math.round(((color >> 16) & 0xff) * share) << 16) |
+    (Math.round(((color >> 8) & 0xff) * share) << 8) |
+    Math.round((color & 0xff) * share)
+  );
+}
+
+function added(a: number, b: number) {
+  return (
+    (Math.min(((a >> 16) & 0xff) + ((b >> 16) & 0xff), 255) << 16) |
+    (Math.min(((a >> 8) & 0xff) + ((b >> 8) & 0xff), 255) << 8) |
+    Math.min((a & 0xff) + (b & 0xff), 255)
+  );
+}
+
+function hex(color: number) {
+  return `#${(color | 0x1000000).toString(16).slice(1).toUpperCase()}`;
 }
