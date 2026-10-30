@@ -82,8 +82,7 @@ function label(days: DayForecast[]) {
   weekdayLabels = [];
 
   for (const day of days) {
-    // Noon, so the date reads the same in any timezone the device is set to.
-    const at = new Date(`${day.date}T12:00:00`);
+    const at = new Date(`${day.date}T12:00:00Z`);
     dayLabels.push(formatDay(at));
     weekdayLabels.push(formatWeekday(at));
   }

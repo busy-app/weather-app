@@ -1,3 +1,4 @@
+import { wallClock } from "@shared/datetime";
 import { displayClear, displayDraw, getWifiState, outstanding, whenSettled } from "@shared/device";
 import manifest from "./appmeta/manifest.json";
 import {
@@ -206,7 +207,7 @@ function paintNow(): void {
   } else if (phase.screen === "error") {
     errorScreen(frame, phase.text);
   } else if (phase.screen === "weather") {
-    weatherScreen(frame, weather!, new Date(), {
+    weatherScreen(frame, weather!, wallClock(Date.now(), utcOffsetMs), {
       time: settings.showTime,
       date: settings.showDate,
     });
