@@ -89,8 +89,9 @@ When in doubt, choose the cheaper option: a slower refresh, fewer requests, less
 - `priority` is 1–100. Keep it at 50 unless the app deliberately needs to take the screen from another one.
 - Colors are `#RRGGBBAA`.
 - `listen("input", handler)` delivers `ok`, `start` and `back` with a `press`, `release`, `short`, `long` or `repeat` action, and `encoder` with a direction and a `delta` of `1` or `-1`. It returns an unbind function.
-- **Use `short` as the default button action, not `press`.** `short` fires once, after a normal press and release; `press` fires immediately on key down and is followed by `short` on release, so treating `press` as a tap reacts before the gesture is complete and can double-fire. Use `long` and `repeat` for hold gestures, and `press`/`release` only when the down and up edges matter.
-- Exception in this app: `ok` and `start` switch screens on `press`, deliberately, so the screen flips on key down; `short` is ignored there, so nothing fires twice. Keep it that way. `back` quits on `short`.
+- **Use `short` as the default button action, not `press`.** `short` fires once, after a normal press and release; `press` fires immediately on key down and is followed by `short` on release, so treating `press` as a tap reacts before the gesture is complete and can double-fire. Use `long` and `repeat` for hold gestures. `press` and `release` are only for acting at the exact moment the key goes down or comes up; switching screens, confirming and quitting are not that.
+- In this app `ok` and `start` switch screens on `short`, and `back` quits on `short`; every other action of those keys is ignored.
+- Quitting is `stop()` in `src/main.ts`: it clears every timer and schedules the unbind of the input handler. It does not wait for requests still in flight; the runtime keeps the app alive until they settle, and every callback checks `stopped` before it draws or starts anything.
 - Settings are described in `src/appmeta/settings.json` and read once at startup by `loadSettings()` in `src/settings.ts`, which falls back to `DEFAULTS` on a failure or a version mismatch. Keep `VERSION` and `DEFAULTS` in step with `settings.json`. Do not put secrets in settings files.
 - The weather backend URL comes from `VITE_WEATHER_API` (`.env` locally, the `WEATHER_API` repository variable in CI). Never commit `.env`; add new variables to `.env.example` and `types/env.d.ts`.
 
@@ -113,7 +114,7 @@ Run `pnpm typecheck` and `pnpm build`, then check:
 - [ ] The app quits cleanly when `back` (or the app's quit action) is used: no timer or listener outlives it.
 - [ ] No path leaks an interval, timeout or listener; errors do not leave timers running.
 - [ ] Memory use is bounded: no unbounded caches, buffers or per-frame copies.
-- [ ] Button activation uses `short`, not `press` (except the screen switch on `ok` / `start`); holds use `long` and `repeat`.
+- [ ] Button activation uses `short`, not `press`; holds use `long` and `repeat`.
 - [ ] Requests are infrequent and do not pile up; failures back off instead of retrying in a tight loop.
 - [ ] Frames send only changed elements and are redrawn only when something visible changes.
 - [ ] `src/appmeta/manifest.json` has a valid `id`, `name` and semver `version`, and `api_version` is no higher than needed.
