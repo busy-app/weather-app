@@ -65,19 +65,17 @@ let linkChecked = false;
 async function refresh(): Promise<void> {
   const place = settings.location;
 
-  await tracked(async () => {
-    const forecast = await fetchForecast(place.mode === "fixed" ? place : undefined);
-    const selectedDate = phase.screen === "days" ? days[phase.day]?.date : undefined;
-    const now = Date.now();
+  const forecast = await fetchForecast(place.mode === "fixed" ? place : undefined);
+  const selectedDate = phase.screen === "days" ? days[phase.day]?.date : undefined;
+  const now = Date.now();
 
-    weather = forecast.current;
-    days = forecast.days;
-    utcOffsetMs = forecast.utcOffsetSeconds * 1000;
-    forecastHours = forecast.hours;
+  weather = forecast.current;
+  days = forecast.days;
+  utcOffsetMs = forecast.utcOffsetSeconds * 1000;
+  forecastHours = forecast.hours;
 
-    updateHours(now);
-    updateDays(now, selectedDate);
-  });
+  updateHours(now);
+  updateDays(now, selectedDate);
 }
 
 function localDayOf(now: number) {
@@ -138,26 +136,6 @@ const frame = new Frame();
 /** A frame was asked for while the device still had one; it goes out when the device answers. */
 let held = false;
 
-/** The app was asked to stop and still had something out; the handler goes once it does not. */
-let stopping = false;
-
-/** Requests of the app's own the device has not answered yet: its readings and its settings. */
-let reading = 0;
-
-/**
- * Runs one of the app's own requests: the device will not stop an app while one is outstanding.
- */
-async function tracked<T>(run: () => Promise<T>): Promise<T> {
-  reading += 1;
-
-  try {
-    return await run();
-  } finally {
-    reading -= 1;
-    leave();
-  }
-}
-
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 let clockTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -167,33 +145,19 @@ let unbindInput: BusyUnbind | undefined;
 let stopped = false;
 
 /**
- * Detaches the input handler, once the app has nothing left running.
+ * Stops the app: clears every timer and detaches the input handler.
  *
- * A request the device has not answered counts as something left, so the handler waits for the
- * last reply rather than being dropped alongside it.
+ * Requests still in flight are not waited for: the runtime itself keeps the app alive until they
+ * settle, and `stopped` keeps their callbacks from drawing or starting anything new.
  *
- * The unbind itself waits for a timer: with nothing else left it hands the app back to the device
- * on the spot, and `back` calls this from inside the input handler, which is still running.
+ * The unbind waits for a timer: it is the last handle, and `back` calls this from inside the input
+ * handler, which is still running.
  */
-function leave(): void {
-  if (!stopping || outstanding() > 0 || reading > 0) return;
-
-  stopping = false;
-  const unbind = unbindInput;
-  unbindInput = undefined;
-
-  if (unbind !== undefined) {
-    setTimeout(unbind, 0);
-  }
-}
-
-/** Stops the app: clears what it has running and hands it back to the device. */
 function stop() {
   if (stopped) return;
 
   stopped = true;
   held = false;
-  stopping = true;
 
   if (refreshTimer !== undefined) clearInterval(refreshTimer);
   if (clockTimer !== undefined) clearTimeout(clockTimer);
@@ -201,8 +165,13 @@ function stop() {
   if (resendTimer !== undefined) clearTimeout(resendTimer);
 
   endWait?.();
+  endWait = undefined;
 
-  leave();
+  const unbind = unbindInput;
+  unbindInput = undefined;
+  if (unbind !== undefined) {
+    setTimeout(unbind, 0);
+  }
 }
 
 /** The loading and error screens need no data; every other one waits for the first forecast. */
@@ -386,7 +355,7 @@ function scheduleClock() {
 }
 
 async function linkPending(waited: number) {
-  const state = await tracked(getWifiState).catch(() => undefined);
+  const state = await getWifiState().catch(() => undefined);
   if (state === "connected") {
     return false;
   }
@@ -396,7 +365,7 @@ async function linkPending(waited: number) {
 
 async function failure(err: unknown): Promise<Phase> {
   if (err instanceof OfflineError) {
-    const state = await tracked(getWifiState).catch(() => undefined);
+    const state = await getWifiState().catch(() => undefined);
 
     if (state === "connecting" || state === "reconnecting") {
       joining = true;
@@ -422,7 +391,10 @@ async function failure(err: unknown): Promise<Phase> {
  */
 async function firstForecast(report: (err: unknown) => void) {
   for (let attempt = 0, waited = 0; !stopped;) {
-    if (await linkPending(waited)) {
+    const pending = await linkPending(waited);
+    if (stopped) return;
+
+    if (pending) {
       waited++;
       joining = true;
       settleAttempts = 0;
@@ -470,7 +442,6 @@ function main(): void {
   // The frame that was held back goes out the moment the device answers the one it had.
   whenSettled((failed) => {
     if (stopped) {
-      leave();
       return;
     }
 
@@ -490,14 +461,19 @@ function main(): void {
   // The settings decide which place is asked for and in which scale the readings are drawn, so they come before the first forecast. loadSettings() handles its own failures.
   void (async () => {
     // Starting on "Loading weather" and switching to "Connecting Wi-Fi" a moment later makes the screen flicker, so the link is asked for before the first frame.
-    const state = await tracked(getWifiState).catch(() => undefined);
-    if (stopped) return;
+    const state = await getWifiState().catch(() => undefined);
+    if (stopped) {
+      return;
+    }
 
     phase = { screen: "loading", text: state === "connected" ? LOADING_TEXT : JOINING_TEXT };
     linkChecked = true;
     paintNow();
 
-    settings = await tracked(loadSettings);
+    settings = await loadSettings();
+    if (stopped) {
+      return;
+    }
     setUnits(settings.units);
 
     await firstForecast(report);
@@ -511,7 +487,7 @@ function main(): void {
     }, REFRESH_MS);
 
     scheduleClock();
-  })();
+  })().catch(report);
 
   unbindInput = listen("input", (event) => {
     if (stopped) return;
@@ -527,7 +503,7 @@ function main(): void {
       return;
     }
 
-    if (event.action !== "press") return;
+    if (event.action !== "short") return;
 
     nextScreen();
     paintNow();
