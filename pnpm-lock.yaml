@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@busy-app/busy-lib':
+        specifier: 1.0.0-rc.1
+        version: 1.0.0-rc.1
       '@busy-app/cli':
         specifier: ^0.6.0
         version: 0.6.0(@types/node@24.13.4)
@@ -19,6 +22,10 @@ importers:
         version: 8.1.4(@types/node@24.13.4)
 
 packages:
+
+  '@busy-app/busy-lib@1.0.0-rc.1':
+    resolution: {integrity: sha512-cB6dKL4hD4eN9avhqQJxcP9NPZ7b28Sb3H9Z6uupbqHxDZQFt9IhRsFsLAviSvREMBjMYYnAtmr5nPaaCWrNMA==}
+    engines: {node: '>=18'}
 
   '@busy-app/cli@0.6.0':
     resolution: {integrity: sha512-foaTh8qSUhsWtfnFHNF09+l36wHBdfn+v2VSuRsJZpwKE/KyoKncAcSKCA4VGxLxcdt/e16kwa1R9Ev5RuRmyw==}
@@ -257,6 +264,9 @@ packages:
     resolution: {integrity: sha512-WkUDrojuJs0xkgGf2udWxa3yGBRxPtxUkB79i6aCZLRgc7PM8fZe9TosfPDcvEpQZbuFASnHYmRLBLUbmLOIIA==}
     engines: {node: '>= 12.0.0'}
 
+  long@5.3.2:
+    resolution: {integrity: sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA==}
+
   nanoid@3.3.18:
     resolution: {integrity: sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
@@ -272,6 +282,10 @@ packages:
   postcss@8.5.28:
     resolution: {integrity: sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==}
     engines: {node: ^10 || ^12 || >=14}
+
+  protobufjs@8.8.1:
+    resolution: {integrity: sha512-d9e9179bjXSJdpJ3+R9fP8hzXsnKLyxTjHLG1dUzje8a27pPyXCe6PrcRtgx2rjoM3IZzHd2vAs+6J/BsO1k7Q==}
+    engines: {node: '>=12.0.0'}
 
   rolldown@1.1.5:
     resolution: {integrity: sha512-t9z29cJjXf/vxQ8dyhCSpt6H6aSwHTk8cT5I3iy6SMXuFpk5mB6PL6XfC8PCwrPTx93udwKUm9HRteAlTGBLiA==}
@@ -344,6 +358,10 @@ packages:
         optional: true
 
 snapshots:
+
+  '@busy-app/busy-lib@1.0.0-rc.1':
+    dependencies:
+      protobufjs: 8.8.1
 
   '@busy-app/cli@0.6.0(@types/node@24.13.4)':
     dependencies:
@@ -529,6 +547,8 @@ snapshots:
       lightningcss-win32-arm64-msvc: 1.33.0
       lightningcss-win32-x64-msvc: 1.33.0
 
+  long@5.3.2: {}
+
   nanoid@3.3.18: {}
 
   picocolors@1.1.1: {}
@@ -540,6 +560,10 @@ snapshots:
       nanoid: 3.3.18
       picocolors: 1.1.1
       source-map-js: 1.2.1
+
+  protobufjs@8.8.1:
+    dependencies:
+      long: 5.3.2
 
   rolldown@1.1.5:
     dependencies:

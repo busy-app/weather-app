@@ -7,14 +7,6 @@ import type {
 } from "./apiTypes.ts";
 import { HOURS } from "./graph.ts";
 
-const BASE = (import.meta.env.VITE_WEATHER_API ?? "").replace(/\/+$/, "");
-
-const PREFIX = "/weather/v1";
-
-const SIGNED: BusyRequestInit = {
-  dispatcher: { connect: { useDeviceKey: true } },
-};
-
 export type City = {
   lat: number;
   lon: number;
@@ -60,14 +52,31 @@ export type Forecast = {
   days: DayForecast[];
 };
 
+export type FoundPlace = Place & {
+  country: string;
+  countryCode: string;
+  region: string;
+};
+
+const BASE = (import.meta.env.VITE_WEATHER_API ?? "").replace(/\/+$/, "");
+
+const PREFIX = "/weather/v1";
+
+const SIGNED: BusyRequestInit = {
+  dispatcher: { connect: { useDeviceKey: true } },
+};
+
 /** A day of graph plus a day of slack, so the window can slide on between refreshes. */
 const HOURS_AHEAD = HOURS * 2;
 
 export const FORECAST_DAYS = 7;
 
+export const MIN_QUERY = 2;
+const MAX_QUERY = 100;
+
 export class OfflineError extends Error {}
 
-async function get<T>(path: string): Promise<T> {
+async function get<T>(path: string) {
   let res: Response;
   try {
     res = await fetch(`${BASE}${PREFIX}${path}`, SIGNED);
@@ -76,10 +85,13 @@ async function get<T>(path: string): Promise<T> {
   }
 
   if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((body) => (body as ErrorResponse).error?.message)
-      .catch(() => undefined);
+    let detail: string | undefined;
+    try {
+      detail = ((await res.json()) as ErrorResponse).error?.message;
+    } catch {
+      // A body that is not JSON still leaves the status to report.
+    }
+
     throw new Error(`weather api: HTTP ${res.status}${detail ? ` — ${detail}` : ""}`);
   }
 
@@ -130,12 +142,6 @@ export async function fetchForecast(city?: City): Promise<Forecast> {
   };
 }
 
-export type FoundPlace = Place & {
-  country: string;
-  countryCode: string;
-  region: string;
-};
-
 function toFoundPlace(place: ApiPlace): FoundPlace {
   return {
     name: place.name,
@@ -148,9 +154,6 @@ function toFoundPlace(place: ApiPlace): FoundPlace {
   };
 }
 
-export const MIN_QUERY = 2;
-const MAX_QUERY = 100;
-
 export async function searchLocations(query: string): Promise<FoundPlace[]> {
   const trimmed = query.trim().slice(0, MAX_QUERY);
   if (trimmed.length < MIN_QUERY) return [];
@@ -158,5 +161,6 @@ export async function searchLocations(query: string): Promise<FoundPlace[]> {
   const data = await get<LocationsResponse>(
     `/locations?query=${encodeURIComponent(trimmed)}`,
   );
+
   return (data.results ?? []).map(toFoundPlace);
 }

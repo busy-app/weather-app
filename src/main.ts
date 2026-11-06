@@ -1,5 +1,13 @@
+import "./font.ts";
 import { wallClock } from "@shared/datetime";
-import { displayClear, displayDraw, getWifiState, outstanding, whenSettled } from "@shared/device";
+import {
+  displayClear,
+  displayDraw,
+  getWifiState,
+  outstanding,
+  whenSettled,
+  type WifiState,
+} from "@shared/device";
 import manifest from "./appmeta/manifest.json";
 import {
   fetchForecast,
@@ -25,13 +33,12 @@ type Phase =
   | { screen: "forecast"; hour: number }
   | { screen: "days"; day: number };
 
-/** The name the app draws under; the device clears elements by this id. */
+type Screen = (typeof SCREENS)[number];
+
 const APP = manifest.id;
 
-/** How often the forecast is fetched again. */
 const REFRESH_MS = 15 * 60 * 1000;
 
-/** The clock on the weather screen is repainted on the minute. */
 const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
@@ -39,10 +46,8 @@ const DAY_MS = 24 * HOUR_MS;
 /** Added to the wait so the tick lands after the minute has rolled over, not on its edge. */
 const MINUTE_SKEW_MS = 50;
 
-/** How long after a request the device did not take the whole frame is sent again. */
 const RESEND_MS = 1000;
 
-/** The current conditions, the hours of the graph, and the days after them. */
 let weather: CurrentWeather | undefined;
 let forecastHours: ForecastHour[] = [];
 let hours: ForecastHour[] = [];
@@ -62,8 +67,44 @@ let phase: Phase = { screen: "loading", text: LOADING_TEXT };
 /** False until the Wi-Fi state has picked the loader text, so the first frame never shows a text that is about to change. */
 let linkChecked = false;
 
-/** Reads the forecast. Failures leave the last good data on screen. */
-async function refresh(): Promise<void> {
+const RETRY_MS = [3000, 6000, 12000, 24000, 48000, 60000];
+
+const JOINING_TEXT = "Connecting Wi-Fi";
+const JOINING_RETRY_MS = 2000;
+const JOINING_MAX_MS = 15000;
+
+/** Right after boot the link reads as disconnected until the firmware starts joining, so the first checks wait whatever it says. */
+const JOINING_WAITS = 5;
+
+/** Requests right after the link comes up still fail: hold the loader instead of flashing the error. */
+const SETTLE_ATTEMPTS = 3;
+
+let joining = false;
+let settleAttempts = 0;
+
+let fetchingHour = false;
+
+const frame = new Frame();
+
+let held = false;
+
+let refreshTimer: ReturnType<typeof setInterval> | undefined;
+let clockTimer: ReturnType<typeof setTimeout> | undefined;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
+let resendTimer: ReturnType<typeof setTimeout> | undefined;
+let endWait: (() => void) | undefined;
+let unbindInput: BusyUnbind | undefined;
+let stopped = false;
+
+/** `loading` and `error` are not among them: they are left behind for good once the forecast arrives. */
+const SCREENS = ["weather", "forecast", "days"] as const;
+
+function report(err: unknown, context?: string) {
+  const text = err instanceof Error ? err.message : String(err);
+  console.error(context === undefined ? `${APP}: ${text}` : `${APP}: ${context}: ${text}`);
+}
+
+async function refresh() {
   const place = settings.location;
 
   const forecast = await fetchForecast(place.mode === "fixed" ? place : undefined);
@@ -131,23 +172,7 @@ function updateHours(now: number) {
   }
 }
 
-/** The elements on screen, kept between frames so only what moved is rebuilt and sent. */
-const frame = new Frame();
-
-/** A frame was asked for while the device still had one; it goes out when the device answers. */
-let held = false;
-
-let refreshTimer: ReturnType<typeof setInterval> | undefined;
-let clockTimer: ReturnType<typeof setTimeout> | undefined;
-let retryTimer: ReturnType<typeof setTimeout> | undefined;
-let resendTimer: ReturnType<typeof setTimeout> | undefined;
-let endWait: (() => void) | undefined;
-let unbindInput: BusyUnbind | undefined;
-let stopped = false;
-
 /**
- * Stops the app: clears every timer and detaches the input handler.
- *
  * Requests still in flight are not waited for: the runtime itself keeps the app alive until they
  * settle, and `stopped` keeps their callbacks from drawing or starting anything new.
  *
@@ -170,26 +195,19 @@ function stop() {
 
   const unbind = unbindInput;
   unbindInput = undefined;
+
   if (unbind !== undefined) {
     setTimeout(unbind, 0);
   }
 }
 
-/** The loading and error screens need no data; every other one waits for the first forecast. */
-function drawable(): boolean {
+function drawable() {
   if (!linkChecked) return false;
+
   return phase.screen === "loading" || phase.screen === "error" || weather !== undefined;
 }
 
-/**
- * Draws whichever screen is due and sends it, without waiting for the device to answer.
- *
- * Elements are addressed by id, so only what differs is sent: a step through the graph sends the
- * pin and the readings, never the bars behind them. Nothing blocks on the request: when one is
- * still outstanding the frame is held, and the newest state goes out as soon as the device is
- * free — so a fast spin skips intermediate positions instead of queueing them up.
- */
-function paintNow(): void {
+function paintNow() {
   if (stopped || !drawable()) return;
 
   // The device works through one request at a time, so queueing more only makes every frame later.
@@ -198,6 +216,7 @@ function paintNow(): void {
     held = true;
     return;
   }
+
   held = false;
 
   frame.begin();
@@ -223,24 +242,20 @@ function paintNow(): void {
   if (frame.changed.length > 0) {
     displayDraw({ application_name: APP, priority: 50, elements: frame.changed });
   }
+
   if (frame.stale.length > 0) {
     displayClear({ application_name: APP, element_ids: frame.stale });
   }
 }
 
-/** The screens in the order the ok and start keys cycle through them. `loading` and `error` are not among them: they are left behind for good once the forecast arrives. */
-const SCREENS = ["weather", "forecast", "days"] as const;
-
-type Screen = (typeof SCREENS)[number];
-
-function filled(screen: Screen): boolean {
+function filled(screen: Screen) {
   if (screen === "forecast") return hours.length > 0;
   if (screen === "days") return days.length > 0;
+
   return weather !== undefined;
 }
 
-/** Advances to the next non-empty screen, wrapping around. The cursor restarts at the first entry. */
-function nextScreen(): void {
+function nextScreen() {
   // Before the first forecast there is no current screen; -1 starts the search at the first one.
   const from = phase.screen === "loading" || phase.screen === "error" ? -1 : SCREENS.indexOf(phase.screen);
 
@@ -251,18 +266,16 @@ function nextScreen(): void {
     if (screen === "weather") phase = { screen: "weather" };
     else if (screen === "forecast") phase = { screen: "forecast", hour: 0 };
     else phase = { screen: "days", day: 0 };
+
     return;
   }
 }
 
-/**
- * Moves the cursor of the current list screen. It stops at both ends instead of wrapping.
- * @returns Whether the cursor actually moved; at either end there is nothing to redraw.
- */
-function scroll(delta: number): boolean {
+function scroll(delta: number) {
   if (phase.screen === "forecast") {
     const hour = Math.min(Math.max(phase.hour + delta, 0), hours.length - 1);
     if (hour === phase.hour) return false;
+
     phase = { screen: "forecast", hour };
     return true;
   }
@@ -270,6 +283,7 @@ function scroll(delta: number): boolean {
   if (phase.screen === "days") {
     const day = Math.min(Math.max(phase.day + delta, 0), days.length - 1);
     if (day === phase.day) return false;
+
     phase = { screen: "days", day };
     return true;
   }
@@ -277,23 +291,8 @@ function scroll(delta: number): boolean {
   return false;
 }
 
-/** How long the first forecast waits before trying again, doubling until the last entry. */
-const RETRY_MS = [3000, 6000, 12000, 24000, 48000, 60000];
-
-const JOINING_TEXT = "Connecting Wi-Fi";
-const JOINING_RETRY_MS = 2000;
-const JOINING_WAITS = 5;
-
-/** Requests right after the link comes up still fail: hold the loader instead of flashing the error. */
-const SETTLE_ATTEMPTS = 3;
-
-let joining = false;
-let settleAttempts = 0;
-
-let fetchingHour = false;
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => {
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
     endWait = resolve;
     retryTimer = setTimeout(() => {
       retryTimer = undefined;
@@ -303,14 +302,13 @@ function wait(ms: number): Promise<void> {
   });
 }
 
-
 async function nextHour() {
   fetchingHour = true;
 
   try {
     await refresh();
   } catch (err) {
-    console.error(`${APP}: ${err instanceof Error ? err.message : String(err)}`);
+    report(err);
     updateHours(Date.now());
   } finally {
     fetchingHour = false;
@@ -319,10 +317,17 @@ async function nextHour() {
   paintNow();
 }
 
-function scheduleClock() {
-  if (stopped) {
-    return;
+async function refreshAndPaint() {
+  try {
+    await refresh();
+    paintNow();
+  } catch (err) {
+    report(err);
   }
+}
+
+function scheduleClock() {
+  if (stopped) return;
 
   clockTimer = setTimeout(
     () => {
@@ -331,7 +336,6 @@ function scheduleClock() {
 
       const now = Date.now();
       const dayChanged = localDayOf(now) !== localDay;
-
       const redrawForDay = dayChanged && (phase.screen === "days" || phase.screen === "weather");
 
       if (dayChanged) {
@@ -343,7 +347,7 @@ function scheduleClock() {
           updateHours(now);
           paintNow();
         } else if (!fetchingHour) {
-          nextHour();
+          void nextHour();
         }
       } else if (redrawForDay || (settings.showTime && phase.screen === "weather")) {
         paintNow();
@@ -355,18 +359,36 @@ function scheduleClock() {
   );
 }
 
-async function linkPending(waited: number) {
-  const state = await getWifiState().catch(() => undefined);
-  if (state === "connected") {
-    return false;
+/** A status that cannot be read does not stop the app: the forecast request that follows decides what to show. */
+async function linkState() {
+  try {
+    return await getWifiState();
+  } catch (err) {
+    report(err, "wifi status");
+    return undefined;
   }
+}
+
+/** A status that could not be read is no reason to wait: it says nothing about the link joining. */
+function linkPending(state: WifiState | undefined, waited: number) {
+  if (state === undefined || state === "connected") return false;
 
   return state === "connecting" || state === "reconnecting" || waited < JOINING_WAITS;
 }
 
+/**
+ * The first checks keep the boot pace, so the weather follows a join quickly. A link that never
+ * joins, such as one with a wrong password, is asked about less and less often.
+ */
+function joiningDelay(streak: number) {
+  if (streak < JOINING_WAITS) return JOINING_RETRY_MS;
+
+  return Math.min(JOINING_RETRY_MS * 2 ** (streak - JOINING_WAITS + 1), JOINING_MAX_MS);
+}
+
 async function failure(err: unknown): Promise<Phase> {
   if (err instanceof OfflineError) {
-    const state = await getWifiState().catch(() => undefined);
+    const state = await linkState();
 
     if (state === "connecting" || state === "reconnecting") {
       joining = true;
@@ -381,18 +403,17 @@ async function failure(err: unknown): Promise<Phase> {
   }
 
   joining = false;
+
   return { screen: "error", text: err instanceof OfflineError ? OFFLINE : FAILED };
 }
 
 /**
- * Keeps asking for the first forecast until one arrives, showing why in between.
- *
- * Without this a start with no network would sit on the spinner until the refresh interval came round a quarter of an hour later.
- * A failed attempt puts the error up instead of the spinner; the next one that succeeds replaces it with the weather.
+ * Without this a start with no network would sit on the spinner until the refresh interval came
+ * round a quarter of an hour later.
  */
-async function firstForecast(report: (err: unknown) => void) {
-  for (let attempt = 0, waited = 0; !stopped;) {
-    const pending = await linkPending(waited);
+async function firstForecast() {
+  for (let attempt = 0, waited = 0, streak = 0; !stopped;) {
+    const pending = linkPending(await linkState(), waited);
     if (stopped) return;
 
     if (pending) {
@@ -401,9 +422,12 @@ async function firstForecast(report: (err: unknown) => void) {
       settleAttempts = 0;
       phase = { screen: "loading", text: JOINING_TEXT };
       paintNow();
-      await wait(JOINING_RETRY_MS);
+      await wait(joiningDelay(streak));
+      streak++;
       continue;
     }
+
+    streak = 0;
 
     if (phase.screen === "loading") {
       phase = { screen: "loading", text: LOADING_TEXT };
@@ -413,14 +437,17 @@ async function firstForecast(report: (err: unknown) => void) {
     try {
       await refresh();
       if (stopped) return;
+
       phase = { screen: "weather" };
       paintNow();
       return;
     } catch (err) {
       report(err);
       if (stopped) return;
+
       phase = await failure(err);
       if (stopped) return;
+
       paintNow();
     }
 
@@ -433,21 +460,42 @@ async function firstForecast(report: (err: unknown) => void) {
   }
 }
 
-/**
- * Entry point, called at the end of the file: the device runs this script from top to bottom and starts nothing by itself.
- */
-function main(): void {
-  const report = (err: unknown) =>
-    console.error(`${APP}: ${err instanceof Error ? err.message : String(err)}`);
+async function start() {
+  try {
+    // Starting on "Loading weather" and switching to "Connecting Wi-Fi" a moment later makes the screen flicker, so the link is asked for before the first frame.
+    const state = await linkState();
+    if (stopped) return;
 
-  // The frame that was held back goes out the moment the device answers the one it had.
+    phase = { screen: "loading", text: linkPending(state, 0) ? JOINING_TEXT : LOADING_TEXT };
+    linkChecked = true;
+    paintNow();
+
+    // The settings decide which place is asked for and in which scale the readings are drawn, so they come before the first forecast.
+    settings = await loadSettings();
+    if (stopped) return;
+
+    setUnits(settings.units);
+
+    await firstForecast();
+    if (stopped) return;
+
+    // Started only once the settings are in hand, so no refresh runs against the wrong place.
+    refreshTimer = setInterval(() => void refreshAndPaint(), REFRESH_MS);
+
+    scheduleClock();
+  } catch (err) {
+    report(err);
+  }
+}
+
+/** Called at the end of the file: the device runs this script from top to bottom and starts nothing by itself. */
+function main() {
   whenSettled((failed) => {
-    if (stopped) {
-      return;
-    }
+    if (stopped) return;
 
     if (failed) {
       frame.invalidate();
+
       if (resendTimer === undefined) {
         resendTimer = setTimeout(() => {
           resendTimer = undefined;
@@ -459,42 +507,14 @@ function main(): void {
     if (held) paintNow();
   });
 
-  // The settings decide which place is asked for and in which scale the readings are drawn, so they come before the first forecast. loadSettings() handles its own failures.
-  void (async () => {
-    // Starting on "Loading weather" and switching to "Connecting Wi-Fi" a moment later makes the screen flicker, so the link is asked for before the first frame.
-    const state = await getWifiState().catch(() => undefined);
-    if (stopped) {
-      return;
-    }
-
-    phase = { screen: "loading", text: state === "connected" ? LOADING_TEXT : JOINING_TEXT };
-    linkChecked = true;
-    paintNow();
-
-    settings = await loadSettings();
-    if (stopped) {
-      return;
-    }
-    setUnits(settings.units);
-
-    await firstForecast(report);
-    if (stopped) return;
-
-    // Started only once the settings are in hand, so no refresh runs against the wrong place.
-    refreshTimer = setInterval(() => {
-      void refresh()
-        .then(() => paintNow())
-        .catch(report);
-    }, REFRESH_MS);
-
-    scheduleClock();
-  })().catch(report);
+  void start();
 
   unbindInput = listen("input", (event) => {
     if (stopped) return;
 
     if (event.key === "encoder") {
       if (!scroll(event.delta)) return;
+
       paintNow();
       return;
     }

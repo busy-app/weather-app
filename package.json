@@ -1,7 +1,7 @@
 {
   "name": "weather",
   "private": true,
-  "version": "0.7.1",
+  "version": "1.0.0",
   "description": "Weather forecast",
   "author": "Flipper FZCO",
   "type": "module",
@@ -18,6 +18,7 @@
   },
   "packageManager": "pnpm@10.33.0",
   "devDependencies": {
+    "@busy-app/busy-lib": "1.0.0-rc.1",
     "@busy-app/cli": "^0.6.0",
     "typescript": "~6.0.3",
     "vite": "8.1.4"

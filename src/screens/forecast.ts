@@ -1,5 +1,3 @@
-// The forecast screen: the day ahead, one hour at a time.
-//
 //   ┌────────────────────────┐
 //   │ 12:00           ☀ +23° │
 //   │ ▁▂▃▄▅▆▇█▇▆▅▄▃▂▁▂▃▄▅▆▇  │
@@ -11,11 +9,11 @@
 // across them, so stepping through the hours re-texts the readings and moves the pin, and sends
 // nothing that did not change.
 
+import { SCREEN, textLayoutBox, textWidth } from "@busy-app/busy-lib";
 import type { ForecastHour } from "../api.ts";
 import { GRAPH_W, type Graph } from "../graph.ts";
 import type { Frame } from "../frame.ts";
-import { textBox, textWidth } from "../font.ts";
-import { center, SCREEN } from "../screen.ts";
+import { center } from "../screen.ts";
 import { formatTemp } from "../temp.ts";
 import { iconFor } from "../wmo.ts";
 
@@ -33,20 +31,21 @@ const DIM = "#808080FF";
 const GRAPH_Z = 10;
 const PIN_Z = 60;
 
-/** "12:00" for an hour, built once per hour of the day. */
+/** Made once per hour of the day, so a redraw allocates no strings. */
 const HOUR_LABELS: string[] = [];
 
-function formatHour(hour: number): string {
+/** Made once, so a redraw allocates no strings. A forecast with fewer strips leaves the rest to the frame to clear. */
+const STRIP_IDS: string[] = [];
+
+function formatHour(hour: number) {
   let label = HOUR_LABELS[hour];
   if (label === undefined) {
     label = `${String(hour).padStart(2, "0")}:00`;
     HOUR_LABELS[hour] = label;
   }
+
   return label;
 }
-
-/** Made once, so a redraw allocates no strings. A forecast with fewer strips leaves the rest to the frame to clear. */
-const STRIP_IDS: string[] = [];
 
 function stripId(index: number) {
   let id = STRIP_IDS[index];
@@ -58,21 +57,14 @@ function stripId(index: number) {
   return id;
 }
 
-/**
- * The frame.
- *
- * @param hours every hour the graph draws
- * @param graph the chart and the pin position for each hour
- * @param at index into `hours` of the one the pin sits on
- */
 export function forecastScreen(frame: Frame, hours: ForecastHour[], graph: Graph, at: number) {
   const current = hours[at]!;
   const pin = graph.pins[at]!;
 
   const time = formatHour(current.hour);
-  const timeBox = textBox(time, "small");
+  const timeBox = textLayoutBox(time, "small");
   const temp = formatTemp(current.temp, "degree");
-  const tempBox = textBox(temp, "small");
+  const tempBox = textLayoutBox(temp, "small");
 
   const tempX = GRAPH_W - textWidth(temp, "small");
 

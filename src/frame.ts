@@ -1,20 +1,25 @@
-// The elements on screen, kept from one frame to the next.
-//
 // A screen writes its elements here every frame, but the element objects are reused: a field is
 // only reassigned when its value actually changes, and only the elements that changed go into the
 // draw request. A frame therefore costs what moved, not what is on screen.
 
 import type {
   AnimationElement,
-  DisplayElement,
-  ImageElement,
+  DisplayDrawParams,
+  ImageElement as AnyImageElement,
   RectangleElement,
   TextElement,
   XpmBitmapElement,
-} from "@shared/device";
+} from "@busy-app/busy-lib";
 import type { Font } from "./font.ts";
 
-/** How a text that does not fit scrolls. */
+type DisplayElement = DisplayDrawParams["elements"][number];
+
+/** busy-lib types an image as either an app asset or a stock one; the app draws only its own. */
+type ImageElement = Extract<AnyImageElement, { path: string }>;
+
+/** busy-lib types `path` and `stock_path` as alternatives; one element object is given whichever the screen asks for. */
+type LoopElement = AnimationElement & { path?: string; stock_path?: string };
+
 export interface Scroll {
   width: number;
   /** Pixels per minute. */
@@ -24,32 +29,26 @@ export interface Scroll {
 }
 
 export class Frame {
-  /** One element per id, kept between frames. */
   private readonly live = new Map<string, DisplayElement>();
 
-  /** The ids on screen before this frame, and the ids used so far in it. */
   private previous: string[] = [];
   private current: string[] = [];
 
-  /** The elements whose fields changed; what the draw request carries. */
   readonly changed: DisplayElement[] = [];
 
-  /** The ids that have left the screen; what the clear request carries. */
   readonly stale: string[] = [];
 
-  /** Starts a frame. */
-  begin(): void {
+  begin() {
     this.changed.length = 0;
     this.stale.length = 0;
     this.current.length = 0;
   }
 
-  invalidate(): void {
+  invalidate() {
     this.live.clear();
   }
 
-  /** Ends a frame, working out which ids have left the screen. */
-  end(): void {
+  end() {
     const previous = this.previous;
     const current = this.current;
 
@@ -77,7 +76,7 @@ export class Frame {
     y: number,
     z_index?: number,
     width?: number,
-  ): void {
+  ) {
     const element = this.element<TextElement>(id, "text");
     if (
       element.text === value &&
@@ -101,8 +100,7 @@ export class Frame {
     this.changed.push(element);
   }
 
-  /** A text that scrolls through its `width` when it does not fit. */
-  scrollingText(id: string, value: string, font: Font, color: string, x: number, y: number, scroll: Scroll): void {
+  scrollingText(id: string, value: string, font: Font, color: string, x: number, y: number, scroll: Scroll) {
     const element = this.element<TextElement>(id, "text");
     if (
       element.text === value &&
@@ -130,7 +128,7 @@ export class Frame {
     this.changed.push(element);
   }
 
-  image(id: string, path: string, x: number, y: number, z_index?: number): void {
+  image(id: string, path: string, x: number, y: number, z_index?: number) {
     const element = this.element<ImageElement>(id, "image");
     if (element.path === path && element.x === x && element.y === y && element.z_index === z_index) return;
 
@@ -141,9 +139,8 @@ export class Frame {
     this.changed.push(element);
   }
 
-  /** A looping animation from the app's own assets. */
-  animation(id: string, path: string, x: number, y: number): void {
-    const element = this.element<AnimationElement>(id, "animation");
+  animation(id: string, path: string, x: number, y: number) {
+    const element = this.element<LoopElement>(id, "animation");
     if (element.loop === true && element.path === path && element.x === x && element.y === y) return;
 
     element.path = path;
@@ -153,9 +150,8 @@ export class Frame {
     this.changed.push(element);
   }
 
-  /** A looping animation from the device's stock assets. */
-  stockAnimation(id: string, stockPath: string, x: number, y: number): void {
-    const element = this.element<AnimationElement>(id, "animation");
+  stockAnimation(id: string, stockPath: string, x: number, y: number) {
+    const element = this.element<LoopElement>(id, "animation");
     if (element.loop === true && element.stock_path === stockPath && element.x === x && element.y === y) return;
 
     element.stock_path = stockPath;
@@ -165,8 +161,7 @@ export class Frame {
     this.changed.push(element);
   }
 
-  /** A rectangle with a solid, single-colour fill and no border. */
-  rectangle(id: string, x: number, y: number, width: number, height: number, fill: string, z_index?: number): void {
+  rectangle(id: string, x: number, y: number, width: number, height: number, fill: string, z_index?: number) {
     const element = this.element<RectangleElement>(id, "rectangle");
     const fill_colors = element.fill_colors;
 
@@ -195,7 +190,7 @@ export class Frame {
     this.changed.push(element);
   }
 
-  xpm(id: string, data: string, x: number, y: number, z_index?: number): void {
+  xpm(id: string, data: string, x: number, y: number, z_index?: number) {
     const element = this.element<XpmBitmapElement>(id, "xpmbitmap");
     if (element.data === data && element.x === x && element.y === y && element.z_index === z_index) return;
 
@@ -206,15 +201,16 @@ export class Frame {
     this.changed.push(element);
   }
 
-  /** The element for `id`, created once and marked as used by this frame. */
   private element<T extends DisplayElement>(id: string, type: DisplayElement["type"]): T {
     this.current.push(id);
 
     const existing = this.live.get(id);
     if (existing !== undefined && existing.type === type) return existing as T;
 
+    // Only the id and type are known here; the calling method fills in the rest before it is sent.
     const created = { type, id } as unknown as DisplayElement;
     this.live.set(id, created);
+
     return created as T;
   }
 }

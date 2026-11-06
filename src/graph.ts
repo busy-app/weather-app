@@ -6,7 +6,23 @@
 
 import { toUnits } from "./temp.ts";
 import { colorScale, mix, paintedAs, paletteColor } from "./tempColor.ts";
-import { xpm2 } from "./xpm2.ts";
+import { generateXpm2 } from "@busy-app/busy-lib";
+
+export interface Pin {
+  readonly x: number;
+  readonly y: number;
+}
+
+export interface Strip {
+  readonly x: number;
+  readonly y: number;
+  readonly data: string;
+}
+
+export interface Graph {
+  readonly strips: readonly Strip[];
+  readonly pins: readonly Pin[];
+}
 
 export const HOURS = 24;
 export const BAR_W = 3;
@@ -39,22 +55,6 @@ const NONE = -1;
 const pixels = new Int32Array(GRAPH_W * GRAPH_H);
 const fill = new Int32Array(GRAPH_W);
 const tops = new Int32Array(HOURS);
-
-export interface Pin {
-  readonly x: number;
-  readonly y: number;
-}
-
-export interface Strip {
-  readonly x: number;
-  readonly y: number;
-  readonly data: string;
-}
-
-export interface Graph {
-  readonly strips: readonly Strip[];
-  readonly pins: readonly Pin[];
-}
 
 export const NO_GRAPH: Graph = { strips: [], pins: [] };
 
@@ -217,8 +217,8 @@ function strip(from: number, to: number, palette: number[]): Strip {
     }
   }
 
-  const colors: [string, string][] = [[EMPTY, "None"]];
-  for (let i = 0; i < palette.length; i++) colors.push([SYMBOLS.charAt(i), hex(palette[i]!)]);
+  const colors: Record<string, string> = { [EMPTY]: "None" };
+  for (let i = 0; i < palette.length; i++) colors[SYMBOLS.charAt(i)] = hex(palette[i]!);
 
   const rows: string[] = [];
   for (let y = top; y < GRAPH_H; y++) {
@@ -231,7 +231,7 @@ function strip(from: number, to: number, palette: number[]): Strip {
     rows.push(row);
   }
 
-  return { x: from, y: top, data: xpm2(colors, rows) };
+  return { x: from, y: top, data: generateXpm2({ palette: colors, grid: rows }) };
 }
 
 function scaled(color: number, share: number) {

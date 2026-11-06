@@ -1,14 +1,10 @@
-// The settings described by appmeta/settings.json, read once at startup: a change takes effect when the app is restarted.
-
-import { getAppSettings } from "@shared/device";
+import { appsSettingsGet } from "@busy-app/busy-lib";
+import { client } from "@shared/device";
 import manifest from "./appmeta/manifest.json";
-
-/** Must match "version" in appmeta/settings.json. */
-const VERSION = 1;
 
 export type Units = "celsius" | "fahrenheit";
 
-/** Where the forecast is taken for. In auto mode the backend resolves the place itself. */
+/** In auto mode the backend resolves the place itself. */
 export type Location = { mode: "auto" } | { mode: "fixed"; lat: number; lon: number };
 
 /** The geolocation field as the firmware stores it. */
@@ -26,7 +22,10 @@ export type Settings = {
   showDate: boolean;
 };
 
-/** Mirrors the "default" of every field in appmeta/settings.json; used when the device has no settings to give. */
+/** Must match "version" in appmeta/settings.json. */
+const VERSION = 1;
+
+/** Must mirror the "default" of every field in appmeta/settings.json. */
 export const DEFAULTS: Settings = {
   location: { mode: "auto" },
   units: "celsius",
@@ -34,7 +33,7 @@ export const DEFAULTS: Settings = {
   showDate: true,
 };
 
-function readBoolean(values: Record<string, unknown>, key: string, fallback: boolean): boolean {
+function readBoolean(values: Record<string, unknown>, key: string, fallback: boolean) {
   const value = values[key];
   return typeof value === "boolean" ? value : fallback;
 }
@@ -57,10 +56,10 @@ function readLocation(values: Record<string, unknown>): Location {
   return { mode: "fixed", lat, lon };
 }
 
-/** Reads the settings document. A failure or a version mismatch falls back to the defaults, so the app still draws. */
+/** A failure or a version mismatch falls back to the defaults, so the app still draws. */
 export async function loadSettings(): Promise<Settings> {
   try {
-    const { version, values } = await getAppSettings(manifest.id);
+    const { version, values } = await appsSettingsGet(client, { app_id: manifest.id });
 
     if (version !== VERSION) {
       console.warn(`${manifest.id}: settings version ${version} != ${VERSION}, using defaults`);
