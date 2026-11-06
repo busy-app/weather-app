@@ -32,13 +32,13 @@ That makes cleanup part of the app design, not an afterthought:
 - Do the same cleanup on every path that ends a mode or the app, not only in the `back` handler.
 - Do not unbind the last handler from inside that handler's own callback: the process would stop while the callback is still running. Schedule it instead, as the template does with `setTimeout(unbind, 0)`.
 - `listen()` accepts one handler at a time and throws if a handler is already attached. Unbind the old one before attaching another.
-- Keep `main()` synchronous and start asynchronous work from it explicitly. Give every promise a rejection handler (`void work().catch(report)` or `try`/`catch`); an unhandled rejection must not be the only error path.
+- Keep `main()` synchronous and start asynchronous work from it explicitly. An async function that is started without being awaited catches its own errors with `try`/`catch` and reports them; an unhandled rejection must not be the only error path. Call it plainly (`start()`, `setInterval(refresh, ms)`): no `void` in front of the call and no `.then()`/`.catch()` chains.
 - Do not keep the app open with a dummy long-running timer "just in case", and never busy-wait to stay alive.
 
 The shape of a minimal app:
 
 ```ts
-function main(): void {
+function main() {
   const timer = setInterval(() => {
     // redraw
   }, 1000);

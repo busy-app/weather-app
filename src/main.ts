@@ -347,7 +347,7 @@ function scheduleClock() {
           updateHours(now);
           paintNow();
         } else if (!fetchingHour) {
-          void nextHour();
+          nextHour();
         }
       } else if (redrawForDay || (settings.showTime && phase.screen === "weather")) {
         paintNow();
@@ -480,7 +480,7 @@ async function start() {
     if (stopped) return;
 
     // Started only once the settings are in hand, so no refresh runs against the wrong place.
-    refreshTimer = setInterval(() => void refreshAndPaint(), REFRESH_MS);
+    refreshTimer = setInterval(refreshAndPaint, REFRESH_MS);
 
     scheduleClock();
   } catch (err) {
@@ -507,7 +507,7 @@ function main() {
     if (held) paintNow();
   });
 
-  void start();
+  start();
 
   unbindInput = listen("input", (event) => {
     if (stopped) return;

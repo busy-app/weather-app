@@ -65,11 +65,11 @@ async function track(app: string, label: string, request: Promise<unknown>) {
  * objects for the next frame straight away.
  */
 export function displayDraw(request: DisplayDrawParams) {
-  void track(request.application_name, "draw", drawRequest(client, request));
+  track(request.application_name, "draw", drawRequest(client, request));
 }
 
 export function displayClear(request: DisplayClearParams) {
-  void track(request.application_name ?? "?", "clear", clearRequest(client, request));
+  track(request.application_name ?? "?", "clear", clearRequest(client, request));
 }
 
 export async function getWifiState() {
