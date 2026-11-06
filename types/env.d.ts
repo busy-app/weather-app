@@ -1,8 +1,8 @@
-/** BUSY Bar address the app connects to, set at build time with `busy-cli build --addr`; `localhost` by default, the device the app runs on. */
+/** Set at build time with `busy-cli build --addr`; `localhost` by default, the device the app runs on. */
 declare const __BUSY_ADDR__: string
 
 interface ImportMetaEnv {
-  /** Base URL of the weather backend; set in CI (see .env). */
+  /** Set in CI from the `WEATHER_API` repository variable; locally from .env. */
   readonly VITE_WEATHER_API?: string
 }
 
@@ -26,7 +26,6 @@ declare module '*.anim' {
   export default src
 }
 
-/** A device input event. */
 type BusyInputEvent =
   | {
       readonly key: 'encoder'
@@ -38,13 +37,10 @@ type BusyInputEvent =
       readonly action: 'press' | 'release' | 'short' | 'long' | 'repeat'
     }
 
-/** Detaches the handler. The runtime may stop the app once nothing else keeps it alive. */
+/** The runtime may stop the app once nothing else keeps it alive. */
 type BusyUnbind = () => void
 
-/**
- * Subscribes to device input. Throws a TypeError on an unknown type, or when a handler is already attached.
- * @param type - Only 'input' is accepted.
- */
+/** Throws a TypeError on an unknown type, or when a handler is already attached. */
 declare function listen(
   type: 'input',
   handler: (event: BusyInputEvent) => void,

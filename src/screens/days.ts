@@ -1,5 +1,3 @@
-// The multi-day screen: one day at a time, split into daylight and night.
-//
 //   ┌────────────────────────┐
 //   │  9 Mon  DAY    NIGHT   │
 //   │ 10 Tue  ☀ +23  ☾ +20   │
@@ -9,12 +7,22 @@
 // Turning the encoder leaves the rows where they are and changes only their texts, so a step
 // sends the texts that changed and nothing else.
 
-import { formatDay, formatWeekday } from "@shared/datetime";
+import { formatDayOfMonth, formatWeekday, textWidth } from "@busy-app/busy-lib";
+import { asLocal } from "@shared/datetime";
 import type { DayForecast } from "../api.ts";
 import type { Frame } from "../frame.ts";
-import { textWidth } from "../font.ts";
 import { formatTemp } from "../temp.ts";
 import { iconFor } from "../wmo.ts";
+
+interface Half {
+  label: string;
+  color: string;
+  x: number;
+  /** Ids shared with the other screens, so moving between them redraws an element instead of replacing it. */
+  labelId: string;
+  iconId: string;
+  tempId: string;
+}
 
 const ROW_Y = 3;
 const ROW_STEP = 7;
@@ -42,16 +50,6 @@ const ROWS = [
   { day: "text-e", weekday: "text-f" },
 ] as const;
 
-interface Half {
-  label: string;
-  color: string;
-  x: number;
-  /** Ids shared with the other screens, so moving between them redraws an element instead of replacing it. */
-  labelId: string;
-  iconId: string;
-  tempId: string;
-}
-
 const DAYLIGHT: Half = {
   label: "DAY",
   color: DAY_COLOR,
@@ -70,7 +68,6 @@ const NIGHT: Half = {
   tempId: "text-sub",
 };
 
-/** The date labels for the forecast on show; rebuilt only when a new forecast arrives. */
 let labelled: DayForecast[] | undefined;
 let dayLabels: string[] = [];
 let weekdayLabels: string[] = [];
@@ -82,8 +79,8 @@ function label(days: DayForecast[]) {
   weekdayLabels = [];
 
   for (const day of days) {
-    const at = new Date(`${day.date}T12:00:00Z`);
-    dayLabels.push(formatDay(at));
+    const at = asLocal(Date.parse(`${day.date}T12:00:00Z`));
+    dayLabels.push(formatDayOfMonth(at));
     weekdayLabels.push(formatWeekday(at));
   }
 
@@ -96,12 +93,6 @@ function half(frame: Frame, side: Half, code: number, temp: number, daylight: bo
   frame.text(side.tempId, formatTemp(temp, "none"), "small", WHITE, side.x + ICON_W, TEMP_Y);
 }
 
-/**
- * The frame.
- *
- * @param days every day of the forecast
- * @param at index of the day on show
- */
 export function daysScreen(frame: Frame, days: DayForecast[], at: number) {
   label(days);
 

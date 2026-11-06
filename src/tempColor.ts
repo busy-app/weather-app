@@ -3,6 +3,13 @@
 // A day is not painted by its readings alone. Its span is stretched over the palette so a flat
 // day still shows a change of colour, and a hot or frosty day still shows its cool or warm end.
 
+export interface ColorScale {
+  readonly min: number;
+  readonly span: number;
+  readonly paintedMin: number;
+  readonly paintedMax: number;
+}
+
 const COLDEST = -45;
 const STEP = 5;
 
@@ -38,13 +45,6 @@ export function mix(from: number, to: number, part: number) {
     (Math.round(g + (((to >> 8) & 0xff) - g) * part) << 8) |
     Math.round(b + ((to & 0xff) - b) * part)
   );
-}
-
-export interface ColorScale {
-  readonly min: number;
-  readonly span: number;
-  readonly paintedMin: number;
-  readonly paintedMax: number;
 }
 
 export function colorScale(min: number, max: number): ColorScale {
