@@ -1,5 +1,5 @@
 import "./font.ts";
-import { wallClock } from "@shared/datetime";
+import { MINUTE_MS, wallClock } from "@shared/datetime";
 import {
   displayClear,
   displayDraw,
@@ -8,6 +8,7 @@ import {
   whenSettled,
   type WifiState,
 } from "@shared/device";
+import { errorText } from "@shared/errors";
 import manifest from "./appmeta/manifest.json";
 import {
   fetchForecast,
@@ -39,7 +40,6 @@ const APP = manifest.id;
 
 const REFRESH_MS = 15 * 60 * 1000;
 
-const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
@@ -82,7 +82,8 @@ const SETTLE_ATTEMPTS = 3;
 let joining = false;
 let settleAttempts = 0;
 
-let fetchingHour = false;
+/** The interval and the hour rollover can both ask for a forecast; one at a time keeps an older reply from landing after a newer one. */
+let refreshing = false;
 
 const frame = new Frame();
 
@@ -100,7 +101,7 @@ let stopped = false;
 const SCREENS = ["weather", "forecast", "days"] as const;
 
 function report(err: unknown, context?: string) {
-  const text = err instanceof Error ? err.message : String(err);
+  const text = errorText(err);
   console.error(context === undefined ? `${APP}: ${text}` : `${APP}: ${context}: ${text}`);
 }
 
@@ -302,28 +303,22 @@ function wait(ms: number) {
   });
 }
 
-async function nextHour() {
-  fetchingHour = true;
+async function refreshAndPaint() {
+  if (refreshing) return;
+
+  refreshing = true;
 
   try {
     await refresh();
   } catch (err) {
     report(err);
+    // The graph still slides on to the current hour with the readings already fetched.
     updateHours(Date.now());
   } finally {
-    fetchingHour = false;
+    refreshing = false;
   }
 
   paintNow();
-}
-
-async function refreshAndPaint() {
-  try {
-    await refresh();
-    paintNow();
-  } catch (err) {
-    report(err);
-  }
 }
 
 function scheduleClock() {
@@ -346,8 +341,8 @@ function scheduleClock() {
         if (forecastHours.length - windowStart(now) >= HOURS) {
           updateHours(now);
           paintNow();
-        } else if (!fetchingHour) {
-          nextHour();
+        } else {
+          refreshAndPaint();
         }
       } else if (redrawForDay || (settings.showTime && phase.screen === "weather")) {
         paintNow();

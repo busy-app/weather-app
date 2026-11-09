@@ -6,7 +6,6 @@ import type {
   AnimationElement,
   DisplayDrawParams,
   ImageElement as AnyImageElement,
-  RectangleElement,
   TextElement,
   XpmBitmapElement,
 } from "@busy-app/busy-lib";
@@ -158,35 +157,6 @@ export class Frame {
     element.loop = true;
     element.x = x;
     element.y = y;
-    this.changed.push(element);
-  }
-
-  rectangle(id: string, x: number, y: number, width: number, height: number, fill: string, z_index?: number) {
-    const element = this.element<RectangleElement>(id, "rectangle");
-    const fill_colors = element.fill_colors;
-
-    if (
-      element.x === x &&
-      element.y === y &&
-      element.width === width &&
-      element.height === height &&
-      fill_colors !== undefined &&
-      fill_colors[0] === fill &&
-      element.z_index === z_index
-    ) {
-      return;
-    }
-
-    element.x = x;
-    element.y = y;
-    element.width = width;
-    element.height = height;
-    element.fill = "solid";
-    element.border_width = 0;
-    // The array is kept too: only its one colour ever changes.
-    if (fill_colors === undefined) element.fill_colors = [fill];
-    else fill_colors[0] = fill;
-    element.z_index = z_index;
     this.changed.push(element);
   }
 

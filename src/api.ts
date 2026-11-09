@@ -1,10 +1,5 @@
-import type {
-  ApiPlace,
-  ErrorResponse,
-  ForecastResponse,
-  LocationsResponse,
-  WeatherCode,
-} from "./apiTypes.ts";
+import { errorText } from "@shared/errors";
+import type { ErrorResponse, ForecastResponse, WeatherCode } from "./apiTypes.ts";
 import { HOURS } from "./graph.ts";
 
 export type City = {
@@ -37,25 +32,11 @@ export type DayForecast = {
   nightCode: WeatherCode;
 };
 
-export type Place = {
-  name: string;
-  timezone: string;
-  lat: number;
-  lon: number;
-};
-
 export type Forecast = {
-  place: Place;
   utcOffsetSeconds: number;
   current: CurrentWeather;
   hours: ForecastHour[];
   days: DayForecast[];
-};
-
-export type FoundPlace = Place & {
-  country: string;
-  countryCode: string;
-  region: string;
 };
 
 const BASE = (import.meta.env.VITE_WEATHER_API ?? "").replace(/\/+$/, "");
@@ -71,9 +52,6 @@ const HOURS_AHEAD = HOURS * 2;
 
 export const FORECAST_DAYS = 7;
 
-export const MIN_QUERY = 2;
-const MAX_QUERY = 100;
-
 export class OfflineError extends Error {}
 
 async function get<T>(path: string) {
@@ -81,7 +59,7 @@ async function get<T>(path: string) {
   try {
     res = await fetch(`${BASE}${PREFIX}${path}`, SIGNED);
   } catch (err) {
-    throw new OfflineError(`weather api: ${err instanceof Error ? err.message : String(err)}`);
+    throw new OfflineError(`weather api: ${errorText(err)}`);
   }
 
   if (!res.ok) {
@@ -112,12 +90,6 @@ export async function fetchForecast(city?: City): Promise<Forecast> {
 
   return {
     utcOffsetSeconds,
-    place: {
-      name: data.location.name ?? "",
-      timezone: data.location.timezone,
-      lat: data.location.latitude,
-      lon: data.location.longitude,
-    },
     current: {
       temp: data.current.temperature,
       code: data.current.weather_code,
@@ -140,27 +112,4 @@ export async function fetchForecast(city?: City): Promise<Forecast> {
       nightCode: day.night.weather_code,
     })),
   };
-}
-
-function toFoundPlace(place: ApiPlace): FoundPlace {
-  return {
-    name: place.name,
-    timezone: place.timezone,
-    lat: place.latitude,
-    lon: place.longitude,
-    country: place.country ?? "",
-    countryCode: place.country_code ?? "",
-    region: place.admin1 ?? "",
-  };
-}
-
-export async function searchLocations(query: string): Promise<FoundPlace[]> {
-  const trimmed = query.trim().slice(0, MAX_QUERY);
-  if (trimmed.length < MIN_QUERY) return [];
-
-  const data = await get<LocationsResponse>(
-    `/locations?query=${encodeURIComponent(trimmed)}`,
-  );
-
-  return (data.results ?? []).map(toFoundPlace);
 }

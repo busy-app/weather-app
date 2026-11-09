@@ -1,5 +1,6 @@
 import { appsSettingsGet } from "@busy-app/busy-lib";
 import { client } from "@shared/device";
+import { errorText } from "@shared/errors";
 import manifest from "./appmeta/manifest.json";
 
 export type Units = "celsius" | "fahrenheit";
@@ -73,7 +74,7 @@ export async function loadSettings(): Promise<Settings> {
       showDate: readBoolean(values, "show_date", DEFAULTS.showDate),
     };
   } catch (err) {
-    console.error(`${manifest.id}: settings unavailable (${err instanceof Error ? err.message : String(err)}), using defaults`);
+    console.error(`${manifest.id}: settings unavailable (${errorText(err)}), using defaults`);
     return DEFAULTS;
   }
 }

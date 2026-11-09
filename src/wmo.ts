@@ -71,12 +71,16 @@ const ASSETS = new Map<number, string>();
 const ICONS = new Map<number, string>();
 const ANIMATIONS = new Map<number, string>();
 
-export function conditionOf(wmo: number) {
+function keyOf(wmo: number, daylight: boolean) {
+  return wmo * 2 + (daylight ? 1 : 0);
+}
+
+function conditionOf(wmo: number) {
   return CONDITIONS.get(wmo) ?? "cloudy";
 }
 
 function assetFor(wmo: number, daylight: boolean) {
-  const key = wmo * 2 + (daylight ? 1 : 0);
+  const key = keyOf(wmo, daylight);
 
   let name = ASSETS.get(key);
   if (name === undefined) {
@@ -90,7 +94,7 @@ function assetFor(wmo: number, daylight: boolean) {
 }
 
 export function iconFor(wmo: number, daylight: boolean) {
-  const key = wmo * 2 + (daylight ? 1 : 0);
+  const key = keyOf(wmo, daylight);
 
   let path = ICONS.get(key);
   if (path === undefined) {
@@ -102,7 +106,7 @@ export function iconFor(wmo: number, daylight: boolean) {
 }
 
 export function animationFor(wmo: number, daylight: boolean) {
-  const key = wmo * 2 + (daylight ? 1 : 0);
+  const key = keyOf(wmo, daylight);
 
   let path = ANIMATIONS.get(key);
   if (path === undefined) {
