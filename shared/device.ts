@@ -29,9 +29,6 @@ export function outstanding() {
 /**
  * The device takes far longer to answer than a frame takes to build, so the app does not sit on
  * it. `outstanding` lets the app keep only as much in flight as the device can actually work through.
- *
- * No timeout of its own: the firmware fails a request that gets no data for 5 s, and an earlier
- * give-up here would only let a second request start while the first still runs.
  */
 async function track(app: string, label: string, request: Promise<unknown>) {
   inFlight++;
