@@ -19,7 +19,7 @@ The forecast is fetched on launch and every 15 minutes after.
 
 ```sh
 pnpm install
-cp .env.example .env   # set VITE_WEATHER_API to the weather backend
+cp .env.example .env   # optional: another weather backend in VITE_WEATHER_API
 pnpm build             # build the app into dist/app.busy.weather.tgz
 pnpm app:install       # install it on the BUSY Bar connected over USB
 pnpm app:run           # launch the installed app
@@ -116,7 +116,7 @@ By default the build packs that folder into `dist/app.busy.weather.tgz`, with th
 
 ## Releasing
 
-Pushing a git tag matching the manifest `version` (e.g. `0.1.0`) builds the app and attaches `app.busy.weather-<version>.tgz` to a GitHub release. The release notes open with the app's name, id, version and API version. The release fails when the tag differs from the manifest `version`. CI and the release build take the weather backend from the `WEATHER_API` repository variable.
+Pushing a git tag matching the manifest `version` (e.g. `0.1.0`) builds the app and attaches `app.busy.weather-<version>.tgz` to a GitHub release. The release notes open with the app's name, id, version and API version. The release fails when the tag differs from the manifest `version`. CI and the release build take the weather backend from the `WEATHER_API` repository variable; without it the app uses `https://apps-api.busy.app`.
 
 ## Manifest
 

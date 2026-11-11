@@ -7,7 +7,9 @@ import type {
 } from "./apiTypes.ts";
 import { HOURS } from "./graph.ts";
 
-const BASE = (import.meta.env.VITE_WEATHER_API ?? "").replace(/\/+$/, "");
+const BASE = (
+  import.meta.env.VITE_WEATHER_API || "https://apps-api.busy.app"
+).replace(/\/+$/, "");
 
 const PREFIX = "/weather/v1";
 

@@ -93,7 +93,7 @@ When in doubt, choose the cheaper option: a slower refresh, fewer requests, less
 - In this app `ok` and `start` switch screens on `short`, and `back` quits on `short`; every other action of those keys is ignored.
 - Quitting is `stop()` in `src/main.ts`: it clears every timer and schedules the unbind of the input handler. It does not wait for requests still in flight; the runtime keeps the app alive until they settle, and every callback checks `stopped` before it draws or starts anything.
 - Settings are described in `src/appmeta/settings.json` and read once at startup by `loadSettings()` in `src/settings.ts`, which falls back to `DEFAULTS` on a failure or a version mismatch. Keep `VERSION` and `DEFAULTS` in step with `settings.json`. Do not put secrets in settings files.
-- The weather backend URL comes from `VITE_WEATHER_API` (`.env` locally, the `WEATHER_API` repository variable in CI). Never commit `.env`; add new variables to `.env.example` and `types/env.d.ts`.
+- The weather backend URL comes from `VITE_WEATHER_API` (`.env` locally, the `WEATHER_API` repository variable in CI) and defaults to `https://apps-api.busy.app` in `src/api.ts`, so a build without variables, such as the apps catalog's, still reaches the backend. Never commit `.env`; add new variables to `.env.example` and `types/env.d.ts`.
 
 ## Code rules
 
