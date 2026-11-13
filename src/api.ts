@@ -2,6 +2,16 @@ import { errorText } from "@shared/errors";
 import type { ErrorResponse, ForecastResponse, WeatherCode } from "./apiTypes.ts";
 import { HOURS } from "./graph.ts";
 
+const BASE = (
+  import.meta.env.VITE_WEATHER_API || "https://apps-api.busy.app"
+).replace(/\/+$/, "");
+
+const PREFIX = "/weather/v1";
+
+const SIGNED: BusyRequestInit = {
+  dispatcher: { connect: { useDeviceKey: true } },
+};
+
 export type City = {
   lat: number;
   lon: number;
@@ -37,14 +47,6 @@ export type Forecast = {
   current: CurrentWeather;
   hours: ForecastHour[];
   days: DayForecast[];
-};
-
-const BASE = (import.meta.env.VITE_WEATHER_API ?? "").replace(/\/+$/, "");
-
-const PREFIX = "/weather/v1";
-
-const SIGNED: BusyRequestInit = {
-  dispatcher: { connect: { useDeviceKey: true } },
 };
 
 /** A day of graph plus a day of slack, so the window can slide on between refreshes. */

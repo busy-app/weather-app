@@ -2,7 +2,7 @@
 declare const __BUSY_ADDR__: string
 
 interface ImportMetaEnv {
-  /** Set in CI from the `WEATHER_API` repository variable; locally from .env. */
+  /** Base URL of the weather backend; `https://apps-api.busy.app` when unset or empty. Set in CI from the `WEATHER_API` repository variable; locally from .env. */
   readonly VITE_WEATHER_API?: string
 }
 
