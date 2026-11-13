@@ -1,19 +1,6 @@
-import type {
-  ApiPlace,
-  ErrorResponse,
-  ForecastResponse,
-  LocationsResponse,
-  WeatherCode,
-} from "./apiTypes.ts";
+import { errorText } from "@shared/errors";
+import type { ErrorResponse, ForecastResponse, WeatherCode } from "./apiTypes.ts";
 import { HOURS } from "./graph.ts";
-
-const BASE = (import.meta.env.VITE_WEATHER_API ?? "").replace(/\/+$/, "");
-
-const PREFIX = "/weather/v1";
-
-const SIGNED: BusyRequestInit = {
-  dispatcher: { connect: { useDeviceKey: true } },
-};
 
 export type City = {
   lat: number;
@@ -45,19 +32,19 @@ export type DayForecast = {
   nightCode: WeatherCode;
 };
 
-export type Place = {
-  name: string;
-  timezone: string;
-  lat: number;
-  lon: number;
-};
-
 export type Forecast = {
-  place: Place;
   utcOffsetSeconds: number;
   current: CurrentWeather;
   hours: ForecastHour[];
   days: DayForecast[];
+};
+
+const BASE = (import.meta.env.VITE_WEATHER_API ?? "").replace(/\/+$/, "");
+
+const PREFIX = "/weather/v1";
+
+const SIGNED: BusyRequestInit = {
+  dispatcher: { connect: { useDeviceKey: true } },
 };
 
 /** A day of graph plus a day of slack, so the window can slide on between refreshes. */
@@ -67,19 +54,22 @@ export const FORECAST_DAYS = 7;
 
 export class OfflineError extends Error {}
 
-async function get<T>(path: string): Promise<T> {
+async function get<T>(path: string) {
   let res: Response;
   try {
     res = await fetch(`${BASE}${PREFIX}${path}`, SIGNED);
   } catch (err) {
-    throw new OfflineError(`weather api: ${err instanceof Error ? err.message : String(err)}`);
+    throw new OfflineError(`weather api: ${errorText(err)}`);
   }
 
   if (!res.ok) {
-    const detail = await res
-      .json()
-      .then((body) => (body as ErrorResponse).error?.message)
-      .catch(() => undefined);
+    let detail: string | undefined;
+    try {
+      detail = ((await res.json()) as ErrorResponse).error?.message;
+    } catch {
+      // A body that is not JSON still leaves the status to report.
+    }
+
     throw new Error(`weather api: HTTP ${res.status}${detail ? ` — ${detail}` : ""}`);
   }
 
@@ -100,12 +90,6 @@ export async function fetchForecast(city?: City): Promise<Forecast> {
 
   return {
     utcOffsetSeconds,
-    place: {
-      name: data.location.name ?? "",
-      timezone: data.location.timezone,
-      lat: data.location.latitude,
-      lon: data.location.longitude,
-    },
     current: {
       temp: data.current.temperature,
       code: data.current.weather_code,
@@ -128,35 +112,4 @@ export async function fetchForecast(city?: City): Promise<Forecast> {
       nightCode: day.night.weather_code,
     })),
   };
-}
-
-export type FoundPlace = Place & {
-  country: string;
-  countryCode: string;
-  region: string;
-};
-
-function toFoundPlace(place: ApiPlace): FoundPlace {
-  return {
-    name: place.name,
-    timezone: place.timezone,
-    lat: place.latitude,
-    lon: place.longitude,
-    country: place.country ?? "",
-    countryCode: place.country_code ?? "",
-    region: place.admin1 ?? "",
-  };
-}
-
-export const MIN_QUERY = 2;
-const MAX_QUERY = 100;
-
-export async function searchLocations(query: string): Promise<FoundPlace[]> {
-  const trimmed = query.trim().slice(0, MAX_QUERY);
-  if (trimmed.length < MIN_QUERY) return [];
-
-  const data = await get<LocationsResponse>(
-    `/locations?query=${encodeURIComponent(trimmed)}`,
-  );
-  return (data.results ?? []).map(toFoundPlace);
 }

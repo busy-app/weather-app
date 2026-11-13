@@ -49,17 +49,3 @@ export type ErrorResponse = {
     data?: Record<string, unknown>;
   };
 };
-
-export type ApiPlace = {
-  name: string;
-  country: string | null;
-  country_code: string | null;
-  admin1: string | null;
-  latitude: number;
-  longitude: number;
-  timezone: string;
-};
-
-export type LocationsResponse = {
-  results: ApiPlace[];
-};
