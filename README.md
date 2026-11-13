@@ -67,7 +67,9 @@ A file in `src/images`, `src/animations` or `src/sounds` keeps its folder as lon
 
 `images/`, `animations/` and `sounds/` hold only those formats. An image, animation or sound in another format — `.jpg`, `.gif`, `.svg`, `.wav`, `.mp3` and the like — goes to `resources/`, and the build warns that the device cannot read it.
 
-Everything the app draws is placed by hand, in screen pixels: each screen builds the display elements it needs with explicit `x`/`y` coordinates and sends them with `displayDraw()` from `@shared/device`. Text widths and line heights come from `src/font.ts`, which carries only the two device fonts this app prints. The screen is 72×16 pixels.
+The app talks to the BUSY Bar through [`@busy-app/busy-lib`](https://github.com/busy-app/busylib-ts): `@shared/device` holds a `BusyBarAppClient` and the draw and clear calls, and the app imports busy-lib's standalone functions so the bundle keeps only what it uses.
+
+Everything the app draws is placed by hand, in screen pixels: each screen builds the display elements it needs with explicit `x`/`y` coordinates and sends them with `displayDraw()` from `@shared/device`. Text is measured with busy-lib's `textWidth`, `textLayoutBox` and `capBox`, for the two device fonts registered in `src/font.ts`. The forecast graph is built with busy-lib's `generateXpm2`. The screen is 72×16 pixels.
 
 ## Input
 
@@ -141,12 +143,13 @@ The app builds on Node 24 — the version in `.nvmrc` and the range `engines` al
 
 ## Settings
 
-To give the app a settings screen, add `src/appmeta/settings.json` describing the fields, then read the stored values with `getAppSettings()`:
+To give the app a settings screen, add `src/appmeta/settings.json` describing the fields, then read the stored values with busy-lib's `appsSettingsGet()`:
 
 ```ts
-import { getAppSettings } from "@shared/device";
+import { appsSettingsGet } from "@busy-app/busy-lib";
+import { client } from "@shared/device";
 
-const { version, values } = await getAppSettings(manifest.id);
+const { version, values } = await appsSettingsGet(client, { app_id: manifest.id });
 ```
 
 `values` is a map of field id to the stored value. If nothing is stored yet, the first read fills in the defaults from the schema. The weather app reads settings once, at startup — restart it to pick up a change.

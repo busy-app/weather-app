@@ -32,13 +32,13 @@ That makes cleanup part of the app design, not an afterthought:
 - Do the same cleanup on every path that ends a mode or the app, not only in the `back` handler.
 - Do not unbind the last handler from inside that handler's own callback: the process would stop while the callback is still running. Schedule it instead, as the template does with `setTimeout(unbind, 0)`.
 - `listen()` accepts one handler at a time and throws if a handler is already attached. Unbind the old one before attaching another.
-- Keep `main()` synchronous and start asynchronous work from it explicitly. Give every promise a rejection handler (`void work().catch(report)` or `try`/`catch`); an unhandled rejection must not be the only error path.
+- Keep `main()` synchronous and start asynchronous work from it explicitly. An async function that is started without being awaited catches its own errors with `try`/`catch` and reports them; an unhandled rejection must not be the only error path. Call it plainly (`start()`, `setInterval(refresh, ms)`): no `void` in front of the call and no `.then()`/`.catch()` chains.
 - Do not keep the app open with a dummy long-running timer "just in case", and never busy-wait to stay alive.
 
 The shape of a minimal app:
 
 ```ts
-function main(): void {
+function main() {
   const timer = setInterval(() => {
     // redraw
   }, 1000);
@@ -81,8 +81,11 @@ When in doubt, choose the cheaper option: a slower refresh, fewer requests, less
 
 ## Display, input and settings
 
-- The screen is 72×16 pixels. This app does not use the `@busy-app/busy-lib` layout helpers: each screen in `src/screens/` places its elements by hand, in screen pixels, through `Frame` (`src/frame.ts`), and `src/main.ts` sends them with `displayDraw({ application_name: APP, priority: 50, elements })` from `@shared/device`. `APP` is `manifest.id`.
-- Text widths and line heights come from `src/font.ts`, which carries only the device fonts the app prints. Add a font there before using it on screen.
+- The screen is 72×16 pixels (`SCREEN` from `@busy-app/busy-lib`). The app uses busy-lib for the device API, text measuring, `generateXpm2` and the date formatters, but not its layout helpers (`row`, `column`, `stack`, `render`) or `list`: those build new elements on every call and measure every text each frame. Each screen in `src/screens/` places its elements by hand, in screen pixels, through `Frame` (`src/frame.ts`), and `src/main.ts` sends them with `displayDraw({ application_name: APP, priority: 50, elements })` from `@shared/device`. `APP` is `manifest.id`.
+- `@shared/device` wraps busy-lib's `BusyBarAppClient`: use its `client` for any other busy-lib function (as `src/settings.ts` does with `appsSettingsGet`). Do not use the `BusyBar` class; it bundles every endpoint.
+- Text is measured with busy-lib's `textWidth`, `textLayoutBox` and `capBox`. The fonts are registered in `src/font.ts`, which `src/main.ts` imports first; the build cannot find them on its own because screens pass the font through `Frame`. Register a font's map there before using it on screen.
+- busy-lib keeps up to 512 measurements per cache, which is a lot of a 128 KiB heap. Measure only strings from a small, repeating set; never a string that changes every minute, such as the clock (use `capBox` for it).
+- busy-lib's date formatters read local time. Pass them a date from `wallClock()` or `asLocal()` in `@shared/datetime`, which shift it so the local fields hold the forecast place's wall clock.
 - Give every element a stable `id`. The device replaces elements with the same id; `Frame` reuses element objects between frames and puts only the changed ones into `frame.changed`, so send that, not the whole screen.
 - Remove elements that disappear with `displayClear({ application_name: APP, element_ids: frame.stale })`.
 - `displayDraw` and `displayClear` do not wait for the reply. Check `outstanding()` before sending and hold the frame while a request is in flight; `whenSettled()` is where the held frame goes out.
@@ -101,7 +104,7 @@ When in doubt, choose the cheaper option: a slower refresh, fewer requests, less
 - `localStorage` persists small values per app, but every `setItem` rewrites the whole store to flash. Keep values small and writes rare; use `src/appmeta/settings.json` for user-visible settings.
 - `src/` is the app and the only folder the build scans. `shared/` holds app-level helpers imported as `@shared/*`. The entry point must stay named `main.ts` or `main.js`.
 - TypeScript is strict when the app is written in `.ts`; run `pnpm typecheck`. The entry point may be plain JavaScript (`src/main.js`) instead.
-- Third-party packages must run in this runtime: no Node built-ins and no DOM. Prefer the existing `@shared/*` helpers over adding dependencies.
+- Third-party packages must run in this runtime: no Node built-ins and no DOM. Prefer busy-lib and the existing `@shared/*` helpers over adding dependencies. Import busy-lib's standalone functions, not the `BusyBar` class, so the bundle keeps only what the app calls.
 - Never edit `dist/`; it is generated by `pnpm build`.
 - Report failures with `console.error` and a stable app prefix, and keep one failed request from stopping timers or input handling.
 - Put resources under `src/images`, `src/animations` and `src/sounds` in the formats the bar reads (`.png`/`.image`, `.anim`, `.snd`). Other formats are packaged into `resources/` and cannot be displayed by the bar.

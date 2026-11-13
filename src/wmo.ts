@@ -1,6 +1,5 @@
-// WMO weather codes → the assets that depict them. Several codes share one condition: the list is finer than what ships in animations/ and images/.
+// Several WMO codes share one condition: the list is finer than what ships in animations/ and images/.
 
-/** A weather condition, as far as this app draws it. */
 export type Condition =
   | "clear"
   | "mclear"
@@ -18,7 +17,7 @@ export type Condition =
   | "thunderstorms"
   | "windy";
 
-/** Conditions that look different by day and by night; their assets carry a `_day`/`_night` suffix. */
+/** Their assets carry a `_day`/`_night` suffix. */
 const DIURNAL = new Set<Condition>(["clear", "mclear", "pcloudy"]);
 
 /**
@@ -27,7 +26,6 @@ const DIURNAL = new Set<Condition>(["clear", "mclear", "pcloudy"]);
  */
 const NIGHT_STAND_INS = new Map<Condition, string>([["cloudy", "pcloudy_night"]]);
 
-/** WMO code → condition. Anything unlisted is drawn as cloudy. */
 const CONDITIONS = new Map<number, Condition>([
   [0, "clear"],
   [1, "mclear"],
@@ -65,19 +63,25 @@ const CONDITIONS = new Map<number, Condition>([
   [99, "thunderstorms"],
 ]);
 
-/** The condition a code stands for. */
-export function conditionOf(wmo: number): Condition {
-  return CONDITIONS.get(wmo) ?? "cloudy";
-}
-
 /**
- * The base name of a code's assets, e.g. "clear_day".
- *
  * The names are built once per code and kept: a frame asks for the same few again and again,
  * and a stable string also makes the "did this change?" test an identity check.
  */
-function assetFor(wmo: number, daylight: boolean): string {
-  const key = wmo * 2 + (daylight ? 1 : 0);
+const ASSETS = new Map<number, string>();
+const ICONS = new Map<number, string>();
+const ANIMATIONS = new Map<number, string>();
+
+function keyOf(wmo: number, daylight: boolean) {
+  return wmo * 2 + (daylight ? 1 : 0);
+}
+
+function conditionOf(wmo: number) {
+  return CONDITIONS.get(wmo) ?? "cloudy";
+}
+
+function assetFor(wmo: number, daylight: boolean) {
+  const key = keyOf(wmo, daylight);
+
   let name = ASSETS.get(key);
   if (name === undefined) {
     const condition = conditionOf(wmo);
@@ -85,31 +89,30 @@ function assetFor(wmo: number, daylight: boolean): string {
     name = stand ?? (DIURNAL.has(condition) ? `${condition}_${daylight ? "day" : "night"}` : condition);
     ASSETS.set(key, name);
   }
+
   return name;
 }
 
-const ASSETS = new Map<number, string>();
-const ICONS = new Map<number, string>();
-const ANIMATIONS = new Map<number, string>();
+export function iconFor(wmo: number, daylight: boolean) {
+  const key = keyOf(wmo, daylight);
 
-/** Path of the icon for a code, relative to the app's assets: "images/clear_day.png". */
-export function iconFor(wmo: number, daylight: boolean): string {
-  const key = wmo * 2 + (daylight ? 1 : 0);
   let path = ICONS.get(key);
   if (path === undefined) {
     path = `images/${assetFor(wmo, daylight)}.png`;
     ICONS.set(key, path);
   }
+
   return path;
 }
 
-/** Path of the animation for a code, relative to the app's assets: "animations/clear_day.anim". */
-export function animationFor(wmo: number, daylight: boolean): string {
-  const key = wmo * 2 + (daylight ? 1 : 0);
+export function animationFor(wmo: number, daylight: boolean) {
+  const key = keyOf(wmo, daylight);
+
   let path = ANIMATIONS.get(key);
   if (path === undefined) {
     path = `animations/${assetFor(wmo, daylight)}.anim`;
     ANIMATIONS.set(key, path);
   }
+
   return path;
 }
